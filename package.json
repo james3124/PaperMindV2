@@ -48,7 +48,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "build:editor-web": "npm run build --prefix editor-web && node scripts/generate-editor-html.mjs",
+    "typecheck:web": "tsc -p editor-web --noEmit"
   },
   "private": true
 }
