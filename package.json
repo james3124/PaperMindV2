@@ -3,6 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@docx-editor.dev/core": "^2.9.2",
+    "@docx-editor.dev/react": "^2.9.2",
     "@expo/ui": "~57.0.13",
     "expo": "~57.0.16",
     "expo-constants": "~57.0.14",
