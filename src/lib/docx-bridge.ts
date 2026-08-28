@@ -3,12 +3,14 @@ export const DOCX_MIME =
 
 export type NativeToWebMessage =
   | { type: 'LOAD_DOC'; base64: string }
-  | { type: 'EXPORT_REQUEST' };
+  | { type: 'EXPORT_REQUEST' }
+  | { type: 'SET_THEME'; value: 'light' | 'dark' };
 
 export type WebToNativeMessage =
   | { type: 'READY' }
   | { type: 'DIRTY'; value: boolean }
-  | { type: 'SAVE_REQUEST'; base64: string };
+  | { type: 'SAVE_REQUEST'; base64: string; title?: string }
+  | { type: 'ERROR'; message: string };
 
 export function encodeNativeMessage(message: NativeToWebMessage): string {
   return JSON.stringify(message);
@@ -28,8 +30,15 @@ export function parseWebMessage(raw: string): WebToNativeMessage | null {
       return { type: 'READY' };
     case 'DIRTY':
       return typeof msg.value === 'boolean' ? { type: 'DIRTY', value: msg.value } : null;
-    case 'SAVE_REQUEST':
-      return typeof msg.base64 === 'string' ? { type: 'SAVE_REQUEST', base64: msg.base64 } : null;
+    case 'SAVE_REQUEST': {
+      if (typeof msg.base64 !== 'string') return null;
+      const title = typeof msg.title === 'string' ? msg.title : undefined;
+      return title === undefined
+        ? { type: 'SAVE_REQUEST', base64: msg.base64 }
+        : { type: 'SAVE_REQUEST', base64: msg.base64, title };
+    }
+    case 'ERROR':
+      return typeof msg.message === 'string' ? { type: 'ERROR', message: msg.message } : null;
     default:
       return null;
   }

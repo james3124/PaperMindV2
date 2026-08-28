@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Modal,
   Pressable,
   StyleSheet,
@@ -9,6 +10,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -18,6 +21,8 @@ import {
   formatSize,
   type DocumentItem,
 } from '@/lib/documents';
+
+type AnimatedInterpolation = ReturnType<Animated.Value['interpolate']>;
 
 type DocumentListItemProps = {
   item: DocumentItem;
@@ -37,11 +42,13 @@ export function DocumentListItem({
   style,
 }: DocumentListItemProps) {
   const theme = useTheme();
+  const swipeRef = useRef<Swipeable>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(item.name);
 
   function openSheet() {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDraft(item.name);
     setRenaming(false);
     setSheetVisible(true);
@@ -63,45 +70,110 @@ export function DocumentListItem({
   }
 
   function confirmDelete() {
+    swipeRef.current?.close();
     closeSheet();
     Alert.alert('Delete document', `Delete “${item.name}”? This can’t be undone.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(item) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          onDelete(item);
+        },
+      },
     ]);
+  }
+
+  function swipeShare() {
+    swipeRef.current?.close();
+    onShare(item);
+  }
+
+  function renderRightActions(
+    progress: AnimatedInterpolation,
+    _drag: AnimatedInterpolation,
+  ) {
+    const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] });
+    return (
+      <View style={styles.swipeActions}>
+        <Animated.View style={[styles.swipeButtonWrap, { opacity }]}>
+          <Pressable
+            onPress={swipeShare}
+            accessibilityRole="button"
+            accessibilityLabel={`Share ${item.name}`}
+            style={[styles.swipeButton, { backgroundColor: '#2b579a' }]}
+          >
+            <ThemedText type="smallBold" style={styles.swipeButtonText}>
+              Share
+            </ThemedText>
+          </Pressable>
+        </Animated.View>
+        <Animated.View style={[styles.swipeButtonWrap, { opacity }]}>
+          <Pressable
+            onPress={confirmDelete}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${item.name}`}
+            style={[styles.swipeButton, { backgroundColor: '#ff3b30' }]}
+          >
+            <ThemedText type="smallBold" style={styles.swipeButtonText}>
+              Delete
+            </ThemedText>
+          </Pressable>
+        </Animated.View>
+      </View>
+    );
   }
 
   return (
     <>
-      <Pressable
-        onPress={() => onPress(item)}
-        onLongPress={openSheet}
-        style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }, style]}
+      <Swipeable
+        ref={swipeRef}
+        renderRightActions={renderRightActions}
+        rightThreshold={40}
+        overshootFriction={6}
+        containerStyle={[styles.swipeContainer, style]}
       >
-        <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
-          <ThemedText type="smallBold" style={styles.iconLetter}>
-            W
-          </ThemedText>
-        </View>
-
-        <View style={styles.body}>
-          <ThemedText numberOfLines={1} style={styles.name}>
-            {item.name}
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {formatSize(item.size)} · {formatRelativeDate(item.lastModified)}
-          </ThemedText>
-        </View>
-
         <Pressable
-          onPress={openSheet}
-          hitSlop={12}
-          style={({ pressed }) => [styles.more, pressed && { opacity: 0.5 }]}
+          onPress={() => onPress(item)}
+          onLongPress={openSheet}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name}, ${formatSize(item.size)}, ${formatRelativeDate(item.lastModified)}`}
+          accessibilityHint="Opens the document. Long press or swipe left for more actions."
+          style={({ pressed }) => [
+            styles.row,
+            { backgroundColor: theme.background },
+            pressed && { opacity: 0.6, transform: [{ scale: 0.98 }] },
+          ]}
         >
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
+          <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
+            <ThemedText type="smallBold" style={styles.iconLetter}>
+              W
+            </ThemedText>
+          </View>
+
+          <View style={styles.body}>
+            <ThemedText numberOfLines={1} style={styles.name}>
+              {item.name}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {formatSize(item.size)} · {formatRelativeDate(item.lastModified)}
+            </ThemedText>
+          </View>
+
+          <Pressable
+            onPress={openSheet}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={`More actions for ${item.name}`}
+            style={({ pressed }) => [styles.more, pressed && { opacity: 0.5 }]}
+          >
+            <View style={styles.dot} />
+            <View style={styles.dot} />
+            <View style={styles.dot} />
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </Swipeable>
 
       <Modal
         visible={sheetVisible}
@@ -166,6 +238,8 @@ function SheetButton({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={({ pressed }) => [
         styles.sheetButton,
         { backgroundColor: theme.backgroundElement },
@@ -183,6 +257,24 @@ function SheetButton({
 }
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    borderRadius: Spacing.three,
+    overflow: 'hidden',
+  },
+  swipeActions: {
+    flexDirection: 'row',
+  },
+  swipeButtonWrap: {
+    width: 76,
+  },
+  swipeButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swipeButtonText: {
+    color: '#ffffff',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

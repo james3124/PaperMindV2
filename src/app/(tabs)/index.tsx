@@ -1,7 +1,17 @@
 import * as DocumentPicker from 'expo-document-picker';
+import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  FlatList,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  StyleSheet,
+  ToastAndroid,
+  UIManager,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DocumentListItem } from '@/components/document-list-item';
@@ -21,12 +31,21 @@ import {
   type DocumentItem,
 } from '@/lib/documents';
 
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
+
+function toast(message: string) {
+  if (Platform.OS === 'android') ToastAndroid.show(message, ToastAndroid.SHORT);
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const theme = useTheme();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
 
-  const reload = useCallback(() => {
+  const reload = useCallback((animate = false) => {
+    if (animate) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setDocuments(listDocuments());
   }, []);
 
@@ -36,19 +55,38 @@ export default function HomeScreen() {
     }, [reload]),
   );
 
-  async function createNew() {
+  useEffect(() => () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut), []);
+
+  function createNew() {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const item = createBlankDocument();
-    reload();
+    reload(true);
     router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
   }
 
   async function importFromDevice() {
-    const result = await DocumentPicker.getDocumentAsync({ type: DOCX_MIME });
+    const result = await DocumentPicker.getDocumentAsync({
+      type: DOCX_MIME,
+      multiple: true,
+    });
     if (result.canceled) return;
-    const asset = result.assets[0];
-    const item = importDocIntoLibrary(asset.uri, asset.name);
-    reload();
-    router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
+    const imported: DocumentItem[] = [];
+    for (const asset of result.assets) {
+      try {
+        imported.push(importDocIntoLibrary(asset.uri, asset.name));
+      } catch {
+        // Skip files that cannot be read; keep importing the rest.
+      }
+    }
+    if (imported.length === 0) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    reload(true);
+    if (imported.length === 1) {
+      const item = imported[0];
+      router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
+    } else {
+      toast(`Imported ${imported.length} documents`);
+    }
   }
 
   function openDoc(item: DocumentItem) {
@@ -57,7 +95,7 @@ export default function HomeScreen() {
 
   function doRename(item: DocumentItem, newName: string) {
     renameDocument(item, newName);
-    reload();
+    reload(true);
   }
 
   function doShare(item: DocumentItem) {
@@ -66,7 +104,7 @@ export default function HomeScreen() {
 
   function doDelete(item: DocumentItem) {
     deleteDocument(item);
-    reload();
+    reload(true);
   }
 
   return (
@@ -85,7 +123,9 @@ export default function HomeScreen() {
 
         <View style={styles.actions}>
           <Pressable
-            onPress={() => void createNew()}
+            onPress={createNew}
+            accessibilityRole="button"
+            accessibilityLabel="Create a new blank document"
             style={({ pressed }) => [
               styles.actionButton,
               { backgroundColor: '#2b579a' },
@@ -99,6 +139,8 @@ export default function HomeScreen() {
 
           <Pressable
             onPress={() => void importFromDevice()}
+            accessibilityRole="button"
+            accessibilityLabel="Import Word documents from your device"
             style={({ pressed }) => [
               styles.actionButton,
               { backgroundColor: theme.backgroundElement },
@@ -126,8 +168,34 @@ export default function HomeScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-                Tap + New to start a blank document,{'\n'}or Import to open a .docx from your device.
+                Start a blank document, or import{'\n'}a .docx from your device.
               </ThemedText>
+              <View style={styles.emptyActions}>
+                <Pressable
+                  onPress={createNew}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.actionButton,
+                    { backgroundColor: '#2b579a' },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <ThemedText type="smallBold" style={styles.actionPrimaryText}>
+                    + New
+                  </ThemedText>
+                </Pressable>
+                <Pressable
+                  onPress={() => void importFromDevice()}
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.actionButton,
+                    { backgroundColor: theme.backgroundElement },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <ThemedText type="smallBold">Import</ThemedText>
+                </Pressable>
+              </View>
             </View>
           }
         />
@@ -186,9 +254,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: Spacing.six,
     paddingHorizontal: Spacing.four,
+    gap: Spacing.four,
   },
   emptyText: {
     textAlign: 'center',
     lineHeight: 22,
+  },
+  emptyActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    alignSelf: 'stretch',
   },
 });

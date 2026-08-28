@@ -84,10 +84,29 @@ export function importDocument(sourceUri: string, sourceName: string): DocumentI
 
 export function renameDocument(item: DocumentItem, newBase: string): DocumentItem {
   const base = sanitizeBaseName(newBase);
-  const name = uniqueName(base, DOCX_EXT);
+  const nextName = `${base}${DOCX_EXT}`;
+  if (nextName.toLowerCase() === item.name.toLowerCase()) return item;
+  const taken = existingNames();
+  taken.delete(item.name.toLowerCase());
+  const name = uniqueName(base, DOCX_EXT, taken);
   const file = new File(item.uri);
   file.moveSync(new File(library(), name));
   return toItem(file);
+}
+
+/**
+ * Renames the file to match the in-editor title (if changed). Returns the final name.
+ */
+export function syncDocumentTitle(uri: string, currentName: string, rawTitle: string): string {
+  const base = sanitizeBaseName(rawTitle);
+  const nextName = `${base}${DOCX_EXT}`;
+  if (nextName.toLowerCase() === currentName.toLowerCase()) return currentName;
+  const taken = existingNames();
+  taken.delete(currentName.toLowerCase());
+  const name = uniqueName(base, DOCX_EXT, taken);
+  const file = new File(uri);
+  file.moveSync(new File(library(), name));
+  return name;
 }
 
 export function deleteDocument(item: DocumentItem): void {

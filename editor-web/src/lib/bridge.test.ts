@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { base64ToBytes, bytesToBase64, parseNativeMessage } from './bridge';
+import { base64ToBytes, bytesToBase64, looksLikeDocx, parseNativeMessage } from './bridge';
 
 describe('base64 codecs', () => {
   it('round-trips bytes of all 256 values', () => {
@@ -40,11 +40,48 @@ describe('parseNativeMessage', () => {
     expect(parseNativeMessage('{"type":"EXPORT_REQUEST"}')).toEqual({ type: 'EXPORT_REQUEST' });
   });
 
+  it('accepts SET_THEME with a valid value', () => {
+    expect(parseNativeMessage('{"type":"SET_THEME","value":"dark"}')).toEqual({
+      type: 'SET_THEME',
+      value: 'dark',
+    });
+    expect(parseNativeMessage('{"type":"SET_THEME","value":"light"}')).toEqual({
+      type: 'SET_THEME',
+      value: 'light',
+    });
+  });
+
   it('rejects malformed JSON, unknown types, and invalid base64', () => {
     expect(parseNativeMessage('not json')).toBeNull();
     expect(parseNativeMessage(42)).toBeNull();
     expect(parseNativeMessage('{"type":"NOPE"}')).toBeNull();
     expect(parseNativeMessage('{"type":"LOAD_DOC","base64":"!!!"}')).toBeNull();
     expect(parseNativeMessage('{"type":"LOAD_DOC"}')).toBeNull();
+    expect(parseNativeMessage('{"type":"SET_THEME","value":"blue"}')).toBeNull();
+  });
+});
+
+describe('looksLikeDocx', () => {
+  function base64Of(bytes: Uint8Array): string {
+    return bytesToBase64(bytes);
+  }
+
+  it('accepts a ZIP-shaped payload', () => {
+    const bytes = new Uint8Array(200);
+    bytes[0] = 0x50; // 'P'
+    bytes[1] = 0x4b; // 'K'
+    expect(looksLikeDocx(base64Of(bytes))).toBe(true);
+  });
+
+  it('rejects non-ZIP payloads, tiny payloads, and invalid base64', () => {
+    const notZip = new Uint8Array(200);
+    expect(looksLikeDocx(base64Of(notZip))).toBe(false);
+
+    const tiny = new Uint8Array(10);
+    tiny[0] = 0x50;
+    tiny[1] = 0x4b;
+    expect(looksLikeDocx(base64Of(tiny))).toBe(false);
+
+    expect(looksLikeDocx('!!!')).toBe(false);
   });
 });

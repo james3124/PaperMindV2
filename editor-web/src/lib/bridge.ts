@@ -1,11 +1,13 @@
 export type NativeToWebMessage =
   | { type: 'LOAD_DOC'; base64: string }
-  | { type: 'EXPORT_REQUEST' };
+  | { type: 'EXPORT_REQUEST' }
+  | { type: 'SET_THEME'; value: 'light' | 'dark' };
 
 export type WebToNativeMessage =
   | { type: 'READY' }
   | { type: 'DIRTY'; value: boolean }
-  | { type: 'SAVE_REQUEST'; base64: string };
+  | { type: 'SAVE_REQUEST'; base64: string; title?: string }
+  | { type: 'ERROR'; message: string };
 
 export function postToNative(message: WebToNativeMessage): void {
   const bridge = (globalThis as unknown as {
@@ -35,6 +37,9 @@ export function parseNativeMessage(raw: unknown): NativeToWebMessage | null {
     return { type: 'LOAD_DOC', base64: msg.base64 };
   }
   if (msg.type === 'EXPORT_REQUEST') return { type: 'EXPORT_REQUEST' };
+  if (msg.type === 'SET_THEME' && (msg.value === 'light' || msg.value === 'dark')) {
+    return { type: 'SET_THEME', value: msg.value };
+  }
   return null;
 }
 
@@ -55,4 +60,15 @@ export function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+/** A docx is an OPC package: a ZIP whose first entry is `[Content_Types].xml`. */
+export function looksLikeDocx(base64: string): boolean {
+  let bytes: Uint8Array;
+  try {
+    bytes = base64ToBytes(base64);
+  } catch {
+    return false;
+  }
+  return bytes.length > 100 && bytes[0] === 0x50 && bytes[1] === 0x4b;
 }

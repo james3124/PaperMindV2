@@ -11,6 +11,8 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 import { EDITOR_HTML } from '@/generated/editor-html';
 import { encodeNativeMessage, parseWebMessage } from '@/lib/docx-bridge';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/hooks/use-theme';
 
 const READY_TIMEOUT_MS = 10_000;
 
@@ -21,8 +23,9 @@ export type DocxBridgeHandle = {
 
 type DocxBridgeViewProps = {
   initialDocBase64: string;
-  onSaveRequested: (base64: string) => void;
+  onSaveRequested: (base64: string, title?: string) => void;
   onDirtyChange: (dirty: boolean) => void;
+  onError: (message: string) => void;
 };
 
 function injectMessage(messageJson: string): string {
@@ -32,8 +35,14 @@ function injectMessage(messageJson: string): string {
 }
 
 export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
-  function DocxBridgeView({ initialDocBase64, onSaveRequested, onDirtyChange }, ref) {
+  function DocxBridgeView(
+    { initialDocBase64, onSaveRequested, onDirtyChange, onError },
+    ref,
+  ) {
     const webRef = useRef<WebView>(null);
+    const theme = useTheme();
+    const scheme = useColorScheme();
+    const themeValue = scheme === 'dark' ? 'dark' : 'light';
     const [ready, setReady] = useState(false);
     const [failed, setFailed] = useState(false);
     const [attempt, setAttempt] = useState(0);
@@ -42,6 +51,8 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
     saveRequestedRef.current = onSaveRequested;
     const dirtyChangeRef = useRef(onDirtyChange);
     dirtyChangeRef.current = onDirtyChange;
+    const errorRef = useRef(onError);
+    errorRef.current = onError;
 
     useImperativeHandle(
       ref,
@@ -62,6 +73,14 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
       }
     }, [ready, failed]);
 
+    // Keep the embedded editor's chrome in sync with the app color scheme.
+    useEffect(() => {
+      if (!ready) return;
+      webRef.current?.injectJavaScript(
+        injectMessage(encodeNativeMessage({ type: 'SET_THEME', value: themeValue })),
+      );
+    }, [ready, themeValue]);
+
     const handleMessage = useCallback(
       (event: WebViewMessageEvent) => {
         const msg = parseWebMessage(event.nativeEvent.data);
@@ -70,6 +89,9 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
           case 'READY':
             setReady(true);
             webRef.current?.injectJavaScript(
+              injectMessage(encodeNativeMessage({ type: 'SET_THEME', value: themeValue })),
+            );
+            webRef.current?.injectJavaScript(
               injectMessage(encodeNativeMessage({ type: 'LOAD_DOC', base64: initialDocBase64 })),
             );
             break;
@@ -77,18 +99,27 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
             dirtyChangeRef.current(msg.value);
             break;
           case 'SAVE_REQUEST':
-            saveRequestedRef.current(msg.base64);
+            saveRequestedRef.current(msg.base64, msg.title);
+            break;
+          case 'ERROR':
+            errorRef.current(msg.message);
             break;
         }
       },
-      [initialDocBase64],
+      [initialDocBase64, themeValue],
     );
 
     if (failed) {
       return (
-        <View style={styles.centered}>
-          <Text style={styles.title}>Editor failed to load</Text>
-          <Pressable style={styles.retry} onPress={() => setAttempt((a) => a + 1)}>
+        <View style={[styles.centered, { backgroundColor: theme.background }]}>
+          <Text style={[styles.title, { color: theme.text }]}>Editor failed to load</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.retry,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => setAttempt((a) => a + 1)}
+          >
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         </View>
@@ -96,7 +127,7 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
     }
 
     return (
-      <View style={styles.fill}>
+      <View style={[styles.fill, { backgroundColor: theme.background }]}>
         <WebView
           key={attempt}
           ref={webRef}
@@ -106,6 +137,12 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
           javaScriptEnabled
           onMessage={handleMessage}
           onError={() => setFailed(true)}
+          // Android: never inflate text to match the system font scale — it reads
+          // as the page zooming whenever an input is focused, and breaks layout.
+          textZoom={100}
+          scalesPageToFit={false}
+          overScrollMode="never"
+          style={{ backgroundColor: theme.background }}
         />
       </View>
     );
@@ -115,19 +152,16 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 16,
-    backgroundColor: '#ffffff',
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1f1f1f',
   },
   retry: {
     paddingHorizontal: 24,
