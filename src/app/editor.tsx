@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -244,7 +245,7 @@ export default function EditorScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Check spelling"
               >
-                <Text style={[styles.topBarShare, { color: '#2b579a' }]}>Check</Text>
+                <MaterialCommunityIcons name="spellcheck" size={24} color="#2b579a" />
               </Pressable>
 
               <Pressable
@@ -254,7 +255,7 @@ export default function EditorScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Share ${fileName}`}
               >
-                <Text style={[styles.topBarShare, { color: '#2b579a' }]}>Share</Text>
+                <MaterialCommunityIcons name="share-variant" size={22} color="#2b579a" />
               </Pressable>
             </View>
           </SafeAreaView>

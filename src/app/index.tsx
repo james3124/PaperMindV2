@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
@@ -21,7 +22,7 @@ import { TemplateSheet } from '@/components/template-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import type { TemplateDef } from '@/generated/templates';
 import { useTheme } from '@/hooks/use-theme';
 import { DOCX_MIME } from '@/lib/docx-bridge';
@@ -134,14 +135,29 @@ export default function HomeScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
-          <ThemedText type="subtitle" style={styles.title}>
-            Documents
-          </ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {documents.length === 0
-              ? 'No documents yet'
-              : `${documents.length} document${documents.length === 1 ? '' : 's'}`}
-          </ThemedText>
+          <View>
+            <ThemedText type="subtitle" style={styles.title}>
+              Documents
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {documents.length === 0
+                ? 'No documents yet'
+                : `${documents.length} document${documents.length === 1 ? '' : 's'}`}
+            </ThemedText>
+          </View>
+          <Pressable
+            onPress={() => void importFromDevice()}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Import Word documents from your device"
+            style={({ pressed }) => [
+              styles.iconButton,
+              { backgroundColor: theme.backgroundElement },
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialCommunityIcons name="file-import" size={22} color={theme.text} />
+          </Pressable>
         </View>
 
         {update !== null && (
@@ -173,36 +189,6 @@ export default function HomeScreen() {
           </Pressable>
         )}
 
-        <View style={styles.actions}>
-          <Pressable
-            onPress={openTemplateSheet}
-            accessibilityRole="button"
-            accessibilityLabel="Create a new document from a template"
-            style={({ pressed }) => [
-              styles.actionButton,
-              { backgroundColor: '#2b579a' },
-              pressed && styles.pressed,
-            ]}
-          >
-            <ThemedText type="smallBold" style={styles.actionPrimaryText}>
-              + New
-            </ThemedText>
-          </Pressable>
-
-          <Pressable
-            onPress={() => void importFromDevice()}
-            accessibilityRole="button"
-            accessibilityLabel="Import Word documents from your device"
-            style={({ pressed }) => [
-              styles.actionButton,
-              { backgroundColor: theme.backgroundElement },
-              pressed && styles.pressed,
-            ]}
-          >
-            <ThemedText type="smallBold">Import</ThemedText>
-          </Pressable>
-        </View>
-
         <FlatList
           data={documents}
           keyExtractor={(item) => item.uri}
@@ -220,40 +206,26 @@ export default function HomeScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-                Start a blank document, or import{'\n'}a .docx from your device.
+                Tap + to start a new document,{'\n'}or the import icon to open a .docx.
               </ThemedText>
-              <View style={styles.emptyActions}>
-                <Pressable
-                  onPress={openTemplateSheet}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    { backgroundColor: '#2b579a' },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <ThemedText type="smallBold" style={styles.actionPrimaryText}>
-                    + New
-                  </ThemedText>
-                </Pressable>
-                <Pressable
-                  onPress={() => void importFromDevice()}
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    { backgroundColor: theme.backgroundElement },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <ThemedText type="smallBold">Import</ThemedText>
-                </Pressable>
-              </View>
             </View>
           }
         />
 
         {Platform.OS === 'web' && <WebBadge />}
       </SafeAreaView>
+
+      <Pressable
+        onPress={openTemplateSheet}
+        accessibilityRole="button"
+        accessibilityLabel="Create a new document from a template"
+        style={({ pressed }) => [
+          styles.fab,
+          pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+        ]}
+      >
+        <Ionicons name="add" size={30} color="#ffffff" />
+      </Pressable>
 
       <TemplateSheet
         visible={templateSheetVisible}
@@ -274,11 +246,11 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     paddingHorizontal: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
+    paddingBottom: Spacing.three,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: Spacing.three,
     paddingBottom: Spacing.three,
@@ -301,40 +273,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.one,
     paddingVertical: 2,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-    marginBottom: Spacing.three,
-  },
-  actionButton: {
-    flex: 1,
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.two,
-  },
-  actionPrimaryText: {
-    color: '#ffffff',
+    justifyContent: 'center',
   },
   pressed: {
     opacity: 0.7,
   },
   listContent: {
     gap: Spacing.one,
-    paddingBottom: Spacing.four,
+    paddingBottom: 100,
   },
   empty: {
     alignItems: 'center',
     paddingTop: Spacing.six,
     paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
   },
   emptyText: {
     textAlign: 'center',
     lineHeight: 22,
   },
-  emptyActions: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-    alignSelf: 'stretch',
+  fab: {
+    position: 'absolute',
+    right: Spacing.four,
+    bottom: Spacing.five,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#2b579a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
 });

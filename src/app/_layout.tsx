@@ -16,7 +16,7 @@ export default function RootLayout() {
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
         <AnimatedSplashOverlay />
         <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="index" />
           <Stack.Screen name="editor" />
         </Stack>
       </ThemeProvider>
