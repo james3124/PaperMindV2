@@ -1,18 +1,31 @@
-# PaperMind
+<p align="center">
+  <img src="assets/images/icon.png" width="160" alt="PaperMind icon" />
+</p>
 
-A simple Android app for writing and editing Word (`.docx`) documents.
+<h1 align="center">PaperMind</h1>
 
-Open a document, edit it in a Word-like page view, and save it back to your
-device. Your files stay yours — everything is stored locally, and you can share
-a copy out any time.
+<p align="center">
+  A simple Android app for writing and editing Word (<code>.docx</code>) documents.
+  <br />
+  Open a document, edit it in a Word-like page view, and save it back to your device.
+  <br />
+  Your files stay yours — everything is stored locally, and you can share a copy out any time.
+</p>
 
-## Goals
+<h2 align="center">Goals</h2>
 
-- **Focused writing.** A clean, paginated editor with page breaks, like Word.
-- **No friction.** Create a blank document or import a `.docx` in one tap.
-- **No surprises.** Saves write in place; nothing leaves your phone unless you share it.
-- **Yours to keep.** Export any document via the Android share sheet.
+<p align="center">
+  <b>Focused writing.</b> A clean, paginated editor with page breaks, like Word.
+  <br />
+  <b>No friction.</b> Create a document from a template or import a <code>.docx</code> in one tap.
+  <br />
+  <b>No surprises.</b> Saves write in place; nothing leaves your phone unless you share it.
+  <br />
+  <b>Yours to keep.</b> Export any document via the Android share sheet.
+</p>
 
-## Get the app
+<h2 align="center">Get the app</h2>
 
-Download the latest APK from the [releases page](../../releases/latest).
+<p align="center">
+  Download the latest APK from the <a href="../../releases/latest">releases page</a>.
+</p>
