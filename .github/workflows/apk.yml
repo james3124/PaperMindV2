@@ -39,14 +39,52 @@ jobs:
       - name: Prebuild Android project
         run: npx expo prebuild --platform android --clean
 
+      - name: Decode keystore
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/papermind-release.keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - name: Patch build.gradle for release signing and ABI filters
+        run: |
+          python3 - <<'PY'
+          import re
+          p = 'android/app/build.gradle'
+          s = open(p).read()
+          # 1. Add ABI filters inside defaultConfig (after versionName)
+          s = re.sub(
+              r'(versionName\s+"[^"]+")',
+              r'\1\n        ndk {\n            abiFilters "arm64-v8a", "armeabi-v7a"\n        }',
+              s, count=1,
+          )
+          # 2. Add release signingConfig (after debug block)
+          s = s.replace(
+              "        }\n    }\n    buildTypes {",
+              "        }\n        release {\n            if (System.getenv(\"ANDROID_KEYSTORE_BASE64\")) {\n                storeFile file('papermind-release.keystore')\n                storePassword System.getenv(\"ANDROID_KEYSTORE_PASSWORD\")\n                keyAlias System.getenv(\"ANDROID_KEY_ALIAS\")\n                keyPassword System.getenv(\"ANDROID_KEY_PASSWORD\")\n            }\n        }\n    }\n    buildTypes {",
+              1,
+          )
+          # 3. Make release buildType use release signingConfig when env is present
+          s = s.replace(
+              "            signingConfig signingConfigs.debug\n            def enableShrinkResources",
+              "            signingConfig System.getenv(\"ANDROID_KEYSTORE_BASE64\") ? signingConfigs.release : signingConfigs.debug\n            def enableShrinkResources",
+              1,
+          )
+          open(p, 'w').write(s)
+          print("patched build.gradle")
+          PY
+
       - name: Build APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease -Pandroid.enableMinifyInReleaseBuilds=true -Pandroid.enableShrinkResourcesInReleaseBuilds=true --no-daemon
 
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/PaperMind.apk
+          cp android/app/build/outputs/apk/release/app-release.apk dist/PaperMind.apk
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
