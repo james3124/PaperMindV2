@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Expo type env
+        run: echo '/// <reference types="expo/types" />' > expo-env.d.ts
+
       - name: Typecheck (app)
         run: npx tsc --noEmit
 
