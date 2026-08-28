@@ -1,0 +1,33 @@
+name: release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Promote edge pre-release to latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REL_JSON=$(gh api repos/$GITHUB_REPOSITORY/releases/tags/edge)
+          COMMIT=$(echo "$REL_JSON" | jq -r '.target_commitish')
+          BODY=$(echo "$REL_JSON" | jq -r '.body')
+          VER=$(echo "$BODY" | grep -oE '1\.0\.[0-9]+' | head -1 || true)
+          if [ -z "$VER" ]; then VER="1.0.$(date -u +%y%m%d%H%M)"; fi
+          mkdir -p dist
+          gh release download edge -p PaperMind.apk -D dist
+          NOTES=$(echo "$BODY" | grep -v 'Rolling pre-release' | sed 's/^Version: .*//')
+          gh release create "v$VER" dist/PaperMind.apk \
+            --target "$COMMIT" \
+            --title "PaperMind v$VER" \
+            --notes "$NOTES" \
+            --latest
+          echo "Promoted edge -> v$VER (latest)"

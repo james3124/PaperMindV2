@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -93,11 +95,33 @@ jobs:
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk dist/PaperMind.apk
 
-      - name: Publish release
+      - name: Generate release notes
+        run: |
+          PREV=$(git rev-parse -q --verify refs/tags/edge || true)
+          if [ -z "$PREV" ]; then RANGE="HEAD~10..HEAD"; else RANGE="$PREV..HEAD"; fi
+          {
+            echo "Version: 1.0.${{ github.run_number }}"
+            echo
+            echo "Rolling pre-release built from master. Not the official release."
+            echo
+            echo "### Added"
+            git log $RANGE --no-merges --pretty=%s | grep -E '^feat' | sed -E 's/^feat[^:]*: /- /' || echo "- (none)"
+            echo
+            echo "### Fixed"
+            git log $RANGE --no-merges --pretty=%s | grep -E '^fix' | sed -E 's/^fix[^:]*: /- /' || echo "- (none)"
+            echo
+            echo "### Improved"
+            git log $RANGE --no-merges --pretty=%s | grep -E '^(perf|ci|chore|refactor|docs|style|test)' | sed -E 's/^[a-z]+[^:]*: /- /' || echo "- (none)"
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Publish edge pre-release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: PaperMind v1.0.${{ github.run_number }}
-          body: Automatic APK build from master.
+          tag_name: edge
+          name: PaperMind Edge (pre-release)
+          body_path: RELEASE_NOTES.md
           files: dist/PaperMind.apk
-          make_latest: true
+          prerelease: true
+          make_latest: "false"
+          overwrite: true
