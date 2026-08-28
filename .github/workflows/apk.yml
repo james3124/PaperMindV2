@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: apk-build
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,11 +37,14 @@ jobs:
           import json
           cfg = json.load(open('app.json'))
           cfg['expo'].setdefault('android', {})['versionCode'] = ${{ github.run_number }}
+          cfg['expo']['version'] = "1.0.${{ github.run_number }}"
           json.dump(cfg, open('app.json', 'w'), indent=2)
           EOF
 
       - name: Prebuild Android project
         run: npx expo prebuild --platform android --clean
+
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Decode keystore
         run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/papermind-release.keystore

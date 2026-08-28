@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -5,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   LayoutAnimation,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -32,6 +34,7 @@ import {
   shareDocument,
   type DocumentItem,
 } from '@/lib/documents';
+import { fetchLatestRelease, isNewerVersion, type UpdateInfo } from '@/lib/updates';
 
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -46,6 +49,18 @@ export default function HomeScreen() {
   const theme = useTheme();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [templateSheetVisible, setTemplateSheetVisible] = useState(false);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+
+  useEffect(() => {
+    const current = Constants.expoConfig?.version;
+    if (!current || Platform.OS === 'web') return;
+    const controller = new AbortController();
+    void (async () => {
+      const latest = await fetchLatestRelease(controller.signal);
+      if (latest && isNewerVersion(latest.version, current)) setUpdate(latest);
+    })();
+    return () => controller.abort();
+  }, []);
 
   const reload = useCallback((animate = false) => {
     if (animate) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -128,6 +143,35 @@ export default function HomeScreen() {
               : `${documents.length} document${documents.length === 1 ? '' : 's'}`}
           </ThemedText>
         </View>
+
+        {update !== null && (
+          <Pressable
+            onPress={() => void Linking.openURL(update.url)}
+            accessibilityRole="button"
+            accessibilityLabel={`Download update ${update.version}`}
+            style={({ pressed }) => [
+              styles.updateBanner,
+              { backgroundColor: theme.backgroundElement },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <ThemedText type="smallBold">Update available — v{update.version}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              Tap to download
+            </ThemedText>
+            <Pressable
+              onPress={() => setUpdate(null)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss update notice"
+              style={styles.updateDismiss}
+            >
+              <ThemedText type="small" themeColor="textSecondary">
+                ✕
+              </ThemedText>
+            </Pressable>
+          </Pressable>
+        )}
 
         <View style={styles.actions}>
           <Pressable
@@ -242,6 +286,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     lineHeight: 34,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.two,
+    marginBottom: Spacing.three,
+  },
+  updateDismiss: {
+    marginLeft: 'auto',
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 2,
   },
   actions: {
     flexDirection: 'row',

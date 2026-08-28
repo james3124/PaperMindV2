@@ -14,6 +14,7 @@ import {
 } from '@/lib/documents';
 
 const SAVED_TOAST_MS = 1_600;
+const AUTOSAVE_DEBOUNCE_MS = 4_000;
 
 export default function EditorScreen() {
   const params = useLocalSearchParams<{ uri?: string; name?: string }>();
@@ -32,6 +33,25 @@ export default function EditorScreen() {
   const pendingExitRef = useRef(false);
   const pendingShareRef = useRef(false);
   const pillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autosaveActiveRef = useRef(false);
+
+  const clearAutosaveTimer = useCallback(() => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleAutosave = useCallback(() => {
+    clearAutosaveTimer();
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      if (!dirtyRef.current || pendingShareRef.current || pendingExitRef.current) return;
+      autosaveActiveRef.current = true;
+      bridgeRef.current?.requestExport();
+    }, AUTOSAVE_DEBOUNCE_MS);
+  }, [clearAutosaveTimer]);
 
   const showPill = useCallback((text: string) => {
     setPillText(text);
@@ -63,6 +83,7 @@ export default function EditorScreen() {
   useEffect(() => {
     return () => {
       if (pillTimerRef.current) clearTimeout(pillTimerRef.current);
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
   }, []);
 
@@ -106,6 +127,10 @@ export default function EditorScreen() {
           pendingExitRef.current = false;
           router.back();
           return;
+        }
+        if (autosaveActiveRef.current) {
+          autosaveActiveRef.current = false;
+          return; // Autosaves are silent; only manual saves toast.
         }
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showPill('Saved ✓');
@@ -240,6 +265,8 @@ export default function EditorScreen() {
             onSaveRequested={handleSaveRequested}
             onDirtyChange={(dirty) => {
               dirtyRef.current = dirty;
+              if (dirty) scheduleAutosave();
+              else clearAutosaveTimer();
             }}
             onError={handleBridgeError}
             onSpellCheckResult={handleSpellCheckResult}
