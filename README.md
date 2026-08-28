@@ -1,56 +1,84 @@
-# Welcome to your Expo app 👋
+# PaperMind
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An Android app for writing and editing Word (`.docx`) documents, built with Expo SDK 57.
+The editor is a paginated, Word-like web editor ([@docx-editor.dev](https://docx-editor.dev))
+embedded in a WebView and bridged to the native app.
 
-## Get started
+## Architecture
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/app/(tabs)/index.tsx   Document library: list, + New, Import, rename/share/delete
+src/app/editor.tsx         Editor screen: top bar (back/filename/Share), save in place
+src/components/
+  docx-bridge-view.tsx     WebView host + message bridge, theme sync, zoom fix
+  document-list-item.tsx   Library row with swipe actions and action sheet
+src/lib/
+  documents.ts             Store layer over Paths.document (expo-file-system)
+  docx-bridge.ts           Native side of the postMessage protocol
+  doc-names.ts             Pure naming/formatting helpers (unit-tested)
+editor-web/                Vite + React app that hosts the docx editor
+src/generated/             Generated artifacts (do not edit)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### WebView bridge protocol
 
-### Other setup steps
+Native → web: `LOAD_DOC {base64}`, `EXPORT_REQUEST`, `SET_THEME {value}`
+Web → native: `READY`, `DIRTY {value}`, `SAVE_REQUEST {base64, title?}`, `ERROR {message}`
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Both parsers are unit-tested (`src/lib/docx-bridge.test.ts`, `editor-web/src/lib/bridge.test.ts`).
 
-## Learn more
+### Editor asset pipeline
 
-To learn more about developing your project with Expo, look at the following resources:
+Metro cannot bundle raw HTML, so the editor web app is built to a single file and
+inlined into a TypeScript module:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run generate        # vite build editor-web -> editor-html.ts, plus blank-docx.ts
+```
 
-## Join the community
+- `editor-web/` builds with `vite-plugin-singlefile` into `assets/editor-web/index.html`
+- `scripts/generate-editor-html.mjs` embeds it into `src/generated/editor-html.ts`
+- At runtime the HTML is written to the cache directory once and loaded via `file://`
+  (falls back to inline loading if the write fails)
+- `assets/documents/blank.docx` is embedded as base64 via `scripts/generate-blank-docx.mjs`
 
-Join our community of developers creating universal apps.
+## Development
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npm install
+npx expo start          # then press a to open on Android
+```
+
+### Verification
+
+```bash
+npx tsc --noEmit        # app typecheck
+npm run typecheck:web   # editor-web typecheck
+npm run lint
+npm test                # app unit tests (vitest)
+npm run test:web        # editor-web unit tests
+npx expo-doctor
+```
+
+## Building an APK
+
+The Android applicationId is `com.papermind.app`. Builds run on EAS (no local
+Android SDK required):
+
+```bash
+npx eas login
+npx eas build --profile preview --platform android   # installable APK
+npx eas build --profile production --platform android # Play Store bundle
+```
+
+Profiles are defined in `eas.json` (`development`, `preview` = APK, `production` = AAB).
+
+## Device checklist
+
+Things to verify on a real phone after install:
+
+- [ ] Import copies `content://` picker URIs into the library (Android SAF)
+- [ ] New blank documents open and save correctly
+- [ ] Rename sheet is not covered by the keyboard
+- [ ] Editor does not zoom when tapping into text (WebView `textZoom=100`)
+- [ ] Dark mode follows the system theme in both chrome and editor

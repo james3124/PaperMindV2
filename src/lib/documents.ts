@@ -3,6 +3,16 @@ import * as Sharing from 'expo-sharing';
 
 import { BLANK_DOCX_BASE64 } from '@/generated/blank-docx';
 import { DOCX_MIME } from '@/lib/docx-bridge';
+import {
+  BLANK_BASE,
+  DOCX_EXT,
+  formatRelativeDate,
+  formatSize,
+  sanitizeBaseName,
+  uniqueName as uniqueNamePure,
+} from '@/lib/doc-names';
+
+export { formatRelativeDate, formatSize };
 
 export type DocumentItem = {
   uri: string;
@@ -10,9 +20,6 @@ export type DocumentItem = {
   size: number;
   lastModified: number;
 };
-
-const DOCX_EXT = '.docx';
-const BLANK_BASE = 'Untitled';
 
 function library(): Directory {
   return Paths.document;
@@ -50,13 +57,8 @@ function existingNames(): Set<string> {
 /**
  * "Untitled.docx", then "Untitled 2.docx", "Untitled 3.docx", …
  */
-export function uniqueName(base = BLANK_BASE, ext = DOCX_EXT, taken?: Set<string>): string {
-  const names = taken ?? existingNames();
-  const normalize = (n: string) => n.toLowerCase();
-  if (!names.has(normalize(`${base}${ext}`))) return `${base}${ext}`;
-  let i = 2;
-  while (names.has(normalize(`${base} ${i}${ext}`))) i += 1;
-  return `${base} ${i}${ext}`;
+function uniqueName(base = BLANK_BASE, ext = DOCX_EXT, taken?: Set<string>): string {
+  return uniqueNamePure(base, ext, taken ?? existingNames());
 }
 
 export function createBlankDocument(): DocumentItem {
@@ -64,14 +66,6 @@ export function createBlankDocument(): DocumentItem {
   const file = new File(library(), name);
   file.write(BLANK_DOCX_BASE64, { encoding: 'base64' });
   return toItem(file);
-}
-
-function sanitizeBaseName(raw: string): string {
-  const cleaned = raw.trim().replace(/[\\/:*?"<>|]+/g, ' ').trim();
-  const withoutExt = cleaned.toLowerCase().endsWith(DOCX_EXT)
-    ? cleaned.slice(0, -DOCX_EXT.length)
-    : cleaned.replace(/\.[^.]+$/, '');
-  return (withoutExt || BLANK_BASE).trim();
 }
 
 export function importDocument(sourceUri: string, sourceName: string): DocumentItem {
@@ -117,26 +111,4 @@ export function deleteDocument(item: DocumentItem): void {
 export async function shareDocument(item: DocumentItem): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) return;
   await Sharing.shareAsync(item.uri, { mimeType: DOCX_MIME });
-}
-
-export function formatRelativeDate(ms: number): string {
-  if (!ms) return '';
-  const now = Date.now();
-  const diff = now - ms;
-  const day = 86_400_000;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < day) return `${Math.floor(diff / 3_600_000)}h ago`;
-  const d = new Date(ms);
-  const opts: Intl.DateTimeFormatOptions = diff < 7 * day
-    ? { weekday: 'short' }
-    : { month: 'short', day: 'numeric' };
-  return d.toLocaleDateString(undefined, opts);
-}
-
-export function formatSize(bytes: number): string {
-  if (!bytes) return '0 KB';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1_048_576) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1_048_576).toFixed(1)} MB`;
 }

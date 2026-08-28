@@ -1,3 +1,4 @@
+import { File, Paths } from 'expo-file-system';
 import {
   forwardRef,
   useCallback,
@@ -15,6 +16,31 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 
 const READY_TIMEOUT_MS = 10_000;
+
+/**
+ * Writes the (large) editor HTML to the cache directory once and returns its
+ * file URI, so the WebView loads from disk instead of parsing an inline
+ * string on every open. Returns null to fall back to inline loading.
+ * The file name carries the bundle length, so app updates that change the
+ * editor automatically invalidate the cached copy.
+ */
+function ensureEditorHtmlFile(): string | null {
+  try {
+    const name = `papermind-editor-${EDITOR_HTML.length}.html`;
+    const file = new File(Paths.cache, name);
+    if (!file.exists) {
+      for (const entry of Paths.cache.list()) {
+        if (entry instanceof File && entry.name.startsWith('papermind-editor-')) {
+          entry.delete();
+        }
+      }
+      file.write(EDITOR_HTML);
+    }
+    return file.uri;
+  } catch {
+    return null;
+  }
+}
 
 export type DocxBridgeHandle = {
   /** Ask the embedded editor to serialize and post SAVE_REQUEST. */
@@ -43,6 +69,7 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
     const theme = useTheme();
     const scheme = useColorScheme();
     const themeValue = scheme === 'dark' ? 'dark' : 'light';
+    const [htmlFileUri] = useState(ensureEditorHtmlFile);
     const [ready, setReady] = useState(false);
     const [failed, setFailed] = useState(false);
     const [attempt, setAttempt] = useState(0);
@@ -131,8 +158,9 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
         <WebView
           key={attempt}
           ref={webRef}
-          source={{ html: EDITOR_HTML }}
+          source={htmlFileUri ? { uri: htmlFileUri } : { html: EDITOR_HTML }}
           originWhitelist={['*']}
+          allowFileAccess
           domStorageEnabled
           javaScriptEnabled
           onMessage={handleMessage}
