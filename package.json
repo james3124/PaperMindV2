@@ -53,7 +53,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "build:editor-web": "npm run build --prefix editor-web && node scripts/generate-editor-html.mjs",
-    "generate": "npm run build --prefix editor-web && node scripts/generate-editor-html.mjs && node scripts/generate-blank-docx.mjs",
+    "generate": "npm run build --prefix editor-web && node scripts/generate-editor-html.mjs && python3 scripts/generate-template-docx.py && node scripts/generate-templates.mjs",
     "test": "vitest run",
     "test:web": "npm run test --prefix editor-web",
     "typecheck:web": "tsc -p editor-web --noEmit"

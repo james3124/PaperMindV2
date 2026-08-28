@@ -1,7 +1,7 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
-import { BLANK_DOCX_BASE64 } from '@/generated/blank-docx';
+import { TEMPLATES, type TemplateDef } from '@/generated/templates';
 import { DOCX_MIME } from '@/lib/docx-bridge';
 import {
   BLANK_BASE,
@@ -62,9 +62,21 @@ function uniqueName(base = BLANK_BASE, ext = DOCX_EXT, taken?: Set<string>): str
 }
 
 export function createBlankDocument(): DocumentItem {
-  const name = uniqueName();
+  const blank = TEMPLATES.find((template) => template.id === 'blank');
+  if (!blank) throw new Error('blank template missing');
+  return createDocumentFromTemplate(blank);
+}
+
+/**
+ * Creates a new document in the library from a template. The file is named
+ * after the template ("Report.docx", "Report 2.docx", …); blank documents
+ * keep the classic "Untitled" naming.
+ */
+export function createDocumentFromTemplate(template: TemplateDef): DocumentItem {
+  const base = template.id === 'blank' ? BLANK_BASE : sanitizeBaseName(template.name);
+  const name = uniqueName(base);
   const file = new File(library(), name);
-  file.write(BLANK_DOCX_BASE64, { encoding: 'base64' });
+  file.write(template.base64, { encoding: 'base64' });
   return toItem(file);
 }
 

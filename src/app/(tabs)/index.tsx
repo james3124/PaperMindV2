@@ -15,14 +15,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DocumentListItem } from '@/components/document-list-item';
+import { TemplateSheet } from '@/components/template-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import type { TemplateDef } from '@/generated/templates';
 import { useTheme } from '@/hooks/use-theme';
 import { DOCX_MIME } from '@/lib/docx-bridge';
 import {
-  createBlankDocument,
+  createDocumentFromTemplate,
   deleteDocument,
   importDocument as importDocIntoLibrary,
   listDocuments,
@@ -43,6 +45,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const theme = useTheme();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [templateSheetVisible, setTemplateSheetVisible] = useState(false);
 
   const reload = useCallback((animate = false) => {
     if (animate) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -57,9 +60,14 @@ export default function HomeScreen() {
 
   useEffect(() => () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut), []);
 
-  function createNew() {
+  function openTemplateSheet() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const item = createBlankDocument();
+    setTemplateSheetVisible(true);
+  }
+
+  function createFromTemplate(template: TemplateDef) {
+    setTemplateSheetVisible(false);
+    const item = createDocumentFromTemplate(template);
     reload(true);
     router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
   }
@@ -123,9 +131,9 @@ export default function HomeScreen() {
 
         <View style={styles.actions}>
           <Pressable
-            onPress={createNew}
+            onPress={openTemplateSheet}
             accessibilityRole="button"
-            accessibilityLabel="Create a new blank document"
+            accessibilityLabel="Create a new document from a template"
             style={({ pressed }) => [
               styles.actionButton,
               { backgroundColor: '#2b579a' },
@@ -172,7 +180,7 @@ export default function HomeScreen() {
               </ThemedText>
               <View style={styles.emptyActions}>
                 <Pressable
-                  onPress={createNew}
+                  onPress={openTemplateSheet}
                   accessibilityRole="button"
                   style={({ pressed }) => [
                     styles.actionButton,
@@ -202,6 +210,12 @@ export default function HomeScreen() {
 
         {Platform.OS === 'web' && <WebBadge />}
       </SafeAreaView>
+
+      <TemplateSheet
+        visible={templateSheetVisible}
+        onSelect={createFromTemplate}
+        onClose={() => setTemplateSheetVisible(false)}
+      />
     </ThemedView>
   );
 }

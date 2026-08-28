@@ -27,11 +27,17 @@ export default function EditorScreen() {
   const bridgeRef = useRef<DocxBridgeHandle>(null);
   const [docBase64, setDocBase64] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [showSaved, setShowSaved] = useState(false);
+  const [pillText, setPillText] = useState<string | null>(null);
   const dirtyRef = useRef(false);
   const pendingExitRef = useRef(false);
   const pendingShareRef = useRef(false);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showPill = useCallback((text: string) => {
+    setPillText(text);
+    if (pillTimerRef.current) clearTimeout(pillTimerRef.current);
+    pillTimerRef.current = setTimeout(() => setPillText(null), SAVED_TOAST_MS);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +62,7 @@ export default function EditorScreen() {
 
   useEffect(() => {
     return () => {
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      if (pillTimerRef.current) clearTimeout(pillTimerRef.current);
     };
   }, []);
 
@@ -102,12 +108,10 @@ export default function EditorScreen() {
           return;
         }
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setShowSaved(true);
-        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-        savedTimerRef.current = setTimeout(() => setShowSaved(false), SAVED_TOAST_MS);
+        showPill('Saved ✓');
       })();
     },
-    [writeInPlace, uri, fileName, router],
+    [writeInPlace, uri, fileName, router, showPill],
   );
 
   const handleBridgeError = useCallback(
@@ -145,6 +149,21 @@ export default function EditorScreen() {
     pendingShareRef.current = true;
     bridgeRef.current?.requestExport();
   }, []);
+
+  const requestSpellCheck = useCallback(() => {
+    bridgeRef.current?.requestSpellCheck();
+  }, []);
+
+  const handleSpellCheckResult = useCallback(
+    (fixed: number, remaining: number) => {
+      if (fixed > 0) {
+        showPill(`Fixed ${fixed} word${fixed === 1 ? '' : 's'}`);
+      } else if (remaining === 0) {
+        showPill('No spelling issues');
+      }
+    },
+    [showPill],
+  );
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -194,6 +213,16 @@ export default function EditorScreen() {
               </View>
 
               <Pressable
+                onPress={requestSpellCheck}
+                hitSlop={12}
+                style={({ pressed }) => [styles.topBarAction, pressed && { opacity: 0.5 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Check spelling"
+              >
+                <Text style={[styles.topBarShare, { color: '#2b579a' }]}>Check</Text>
+              </Pressable>
+
+              <Pressable
                 onPress={requestShare}
                 hitSlop={12}
                 style={({ pressed }) => [styles.topBarAction, pressed && { opacity: 0.5 }]}
@@ -213,14 +242,15 @@ export default function EditorScreen() {
               dirtyRef.current = dirty;
             }}
             onError={handleBridgeError}
+            onSpellCheckResult={handleSpellCheckResult}
           />
         </>
       )}
 
-      {showSaved && (
+      {pillText !== null && (
         <View style={styles.savedPill} pointerEvents="none">
           <View style={[styles.savedPillInner, { backgroundColor: theme.backgroundElement }]}>
-            <Text style={[styles.savedPillText, { color: theme.text }]}>Saved ✓</Text>
+            <Text style={[styles.savedPillText, { color: theme.text }]}>{pillText}</Text>
           </View>
         </View>
       )}

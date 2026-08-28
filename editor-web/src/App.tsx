@@ -2,6 +2,7 @@ import { DocxEditor, type DocxEditorRef } from '@docx-editor.dev/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@docx-editor.dev/react/styles.css';
+import { SpellCheckPanel } from './components/spell-check-panel';
 import {
   base64ToBytes,
   bytesToBase64,
@@ -9,19 +10,33 @@ import {
   parseNativeMessage,
   postToNative,
 } from './lib/bridge';
+import { extractDocumentText, findMisspellings, type Misspelling } from './lib/spellcheck';
 
 const ERROR_POST_INTERVAL_MS = 2_000;
+
+type SpellPanelState = {
+  open: boolean;
+  checking: boolean;
+  items: Misspelling[];
+  fixed: number;
+};
+
+const SPELL_PANEL_CLOSED: SpellPanelState = { open: false, checking: false, items: [], fixed: 0 };
 
 export default function App() {
   const editorRef = useRef<DocxEditorRef>(null);
   const [document, setDocument] = useState<ArrayBuffer | undefined>();
   const [title, setTitle] = useState('Untitled');
   const [colorMode, setColorMode] = useState<'light' | 'dark'>('light');
+  const [spellPanel, setSpellPanel] = useState<SpellPanelState>(SPELL_PANEL_CLOSED);
   // Revision of the last save we handed to the host; used to derive DIRTY.
   const savedRevision = useRef<number | null>(null);
   const reportedDirty = useRef(false);
   const editorReady = useRef(false);
   const lastErrorPost = useRef(0);
+  const ignoredWords = useRef<Set<string>>(new Set());
+  const spellPanelRef = useRef(spellPanel);
+  spellPanelRef.current = spellPanel;
 
   const reportError = useCallback((message: string) => {
     const now = Date.now();
@@ -48,6 +63,57 @@ export default function App() {
     reportDirty(false);
   }, [reportDirty, title]);
 
+  const openSpellCheck = useCallback(async () => {
+    setSpellPanel({ open: true, checking: true, items: [], fixed: 0 });
+    try {
+      const saved = await editorRef.current?.save();
+      if (!saved) {
+        setSpellPanel((panel) => ({ ...panel, checking: false }));
+        return;
+      }
+      const text = extractDocumentText(new Uint8Array(saved));
+      const items = findMisspellings(text, ignoredWords.current);
+      setSpellPanel((panel) => ({ ...panel, checking: false, items }));
+    } catch {
+      setSpellPanel((panel) => ({ ...panel, checking: false }));
+    }
+  }, []);
+
+  const fixWord = useCallback((word: string, replacement: string) => {
+    const result = editorRef.current?.exec({
+      type: 'replaceAllMatches',
+      query: word,
+      text: replacement,
+      wholeWord: true,
+    });
+    if (!result?.ok) return;
+    const key = word.toLowerCase();
+    setSpellPanel((panel) => ({
+      ...panel,
+      fixed: panel.fixed + 1,
+      items: panel.items.filter((item) => item.word.toLowerCase() !== key),
+    }));
+  }, []);
+
+  const ignoreWord = useCallback((word: string) => {
+    const key = word.toLowerCase();
+    ignoredWords.current.add(key);
+    setSpellPanel((panel) => ({
+      ...panel,
+      items: panel.items.filter((item) => item.word.toLowerCase() !== key),
+    }));
+  }, []);
+
+  const closeSpellCheck = useCallback(() => {
+    const panel = spellPanelRef.current;
+    postToNative({
+      type: 'SPELL_CHECK_RESULT',
+      fixed: panel.fixed,
+      remaining: panel.items.length,
+    });
+    setSpellPanel((current) => ({ ...current, open: false }));
+  }, []);
+
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       const msg = parseNativeMessage(event.data);
@@ -63,6 +129,8 @@ export default function App() {
         setDocument(base64ToBytes(msg.base64).buffer as ArrayBuffer);
       } else if (msg.type === 'EXPORT_REQUEST') {
         void exportDoc();
+      } else if (msg.type === 'SPELL_CHECK_REQUEST') {
+        void openSpellCheck();
       } else if (msg.type === 'SET_THEME') {
         setColorMode(msg.value);
       }
@@ -89,7 +157,7 @@ export default function App() {
       window.removeEventListener('error', onErrorEvent);
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
     };
-  }, [exportDoc, reportError]);
+  }, [exportDoc, openSpellCheck, reportError]);
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -114,6 +182,18 @@ export default function App() {
           void editor;
         }}
       />
+
+      {spellPanel.open && (
+        <SpellCheckPanel
+          colorMode={colorMode}
+          checking={spellPanel.checking}
+          items={spellPanel.items}
+          fixedCount={spellPanel.fixed}
+          onFix={fixWord}
+          onIgnore={ignoreWord}
+          onClose={closeSpellCheck}
+        />
+      )}
     </div>
   );
 }

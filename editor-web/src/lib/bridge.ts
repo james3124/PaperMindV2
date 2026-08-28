@@ -1,12 +1,14 @@
 export type NativeToWebMessage =
   | { type: 'LOAD_DOC'; base64: string }
   | { type: 'EXPORT_REQUEST' }
+  | { type: 'SPELL_CHECK_REQUEST' }
   | { type: 'SET_THEME'; value: 'light' | 'dark' };
 
 export type WebToNativeMessage =
   | { type: 'READY' }
   | { type: 'DIRTY'; value: boolean }
   | { type: 'SAVE_REQUEST'; base64: string; title?: string }
+  | { type: 'SPELL_CHECK_RESULT'; fixed: number; remaining: number }
   | { type: 'ERROR'; message: string };
 
 export function postToNative(message: WebToNativeMessage): void {
@@ -37,6 +39,7 @@ export function parseNativeMessage(raw: unknown): NativeToWebMessage | null {
     return { type: 'LOAD_DOC', base64: msg.base64 };
   }
   if (msg.type === 'EXPORT_REQUEST') return { type: 'EXPORT_REQUEST' };
+  if (msg.type === 'SPELL_CHECK_REQUEST') return { type: 'SPELL_CHECK_REQUEST' };
   if (msg.type === 'SET_THEME' && (msg.value === 'light' || msg.value === 'dark')) {
     return { type: 'SET_THEME', value: msg.value };
   }

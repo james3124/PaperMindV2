@@ -45,6 +45,8 @@ function ensureEditorHtmlFile(): string | null {
 export type DocxBridgeHandle = {
   /** Ask the embedded editor to serialize and post SAVE_REQUEST. */
   requestExport: () => void;
+  /** Ask the embedded editor to run its spell check panel. */
+  requestSpellCheck: () => void;
 };
 
 type DocxBridgeViewProps = {
@@ -52,6 +54,7 @@ type DocxBridgeViewProps = {
   onSaveRequested: (base64: string, title?: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   onError: (message: string) => void;
+  onSpellCheckResult?: (fixed: number, remaining: number) => void;
 };
 
 function injectMessage(messageJson: string): string {
@@ -62,7 +65,7 @@ function injectMessage(messageJson: string): string {
 
 export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
   function DocxBridgeView(
-    { initialDocBase64, onSaveRequested, onDirtyChange, onError },
+    { initialDocBase64, onSaveRequested, onDirtyChange, onError, onSpellCheckResult },
     ref,
   ) {
     const webRef = useRef<WebView>(null);
@@ -80,6 +83,8 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
     dirtyChangeRef.current = onDirtyChange;
     const errorRef = useRef(onError);
     errorRef.current = onError;
+    const spellResultRef = useRef(onSpellCheckResult);
+    spellResultRef.current = onSpellCheckResult;
 
     useImperativeHandle(
       ref,
@@ -87,6 +92,11 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
         requestExport: () => {
           webRef.current?.injectJavaScript(injectMessage(encodeNativeMessage({
             type: 'EXPORT_REQUEST',
+          })));
+        },
+        requestSpellCheck: () => {
+          webRef.current?.injectJavaScript(injectMessage(encodeNativeMessage({
+            type: 'SPELL_CHECK_REQUEST',
           })));
         },
       }),
@@ -130,6 +140,9 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
             break;
           case 'ERROR':
             errorRef.current(msg.message);
+            break;
+          case 'SPELL_CHECK_RESULT':
+            spellResultRef.current?.(msg.fixed, msg.remaining);
             break;
         }
       },

@@ -8,5 +8,10 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "dictionary-en": "^4.0.0",
+    "fflate": "^0.8.3",
+    "nspell": "^2.1.5"
   }
 }
