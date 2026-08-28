@@ -28,7 +28,6 @@ const SPELL_PANEL_CLOSED: SpellPanelState = { open: false, checking: false, item
 export default function App() {
   const editorRef = useRef<Editor | null>(null);
   const [document, setDocument] = useState<ArrayBuffer | undefined>();
-  const [title, setTitle] = useState('Untitled');
   const [colorMode, setColorMode] = useState<'light' | 'dark'>('light');
   const [spellPanel, setSpellPanel] = useState<SpellPanelState>(SPELL_PANEL_CLOSED);
   // Revision of the last save we handed to the host; used to derive DIRTY.
@@ -38,6 +37,10 @@ export default function App() {
   const ignoredWords = useRef<Set<string>>(new Set());
   const spellPanelRef = useRef(spellPanel);
   spellPanelRef.current = spellPanel;
+  // Base64 of the document already loaded into the editor. The host re-sends
+  // LOAD_DOC on every READY; loading the same bytes again would remount the
+  // editor (new document identity), resetting scroll and closing the keyboard.
+  const loadedBase64 = useRef<string | null>(null);
 
   const reportError = useCallback((message: string) => {
     const now = Date.now();
@@ -58,11 +61,10 @@ export default function App() {
     postToNative({
       type: 'SAVE_REQUEST',
       base64: bytesToBase64(new Uint8Array(saved)),
-      title,
     });
     savedRevision.current = editorRef.current?.getDocumentHandle()?.revision ?? null;
     reportDirty(false);
-  }, [reportDirty, title]);
+  }, [reportDirty]);
 
   const openSpellCheck = useCallback(async () => {
     setSpellPanel({ open: true, checking: true, items: [], fixed: 0 });
@@ -124,9 +126,10 @@ export default function App() {
           reportError('not-a-docx');
           return;
         }
+        if (loadedBase64.current === msg.base64) return;
+        loadedBase64.current = msg.base64;
         savedRevision.current = null;
         reportedDirty.current = false;
-        setTitle(new URLSearchParams(window.location.search).get('title') ?? 'Untitled');
         setDocument(base64ToBytes(msg.base64).buffer as ArrayBuffer);
       } else if (msg.type === 'EXPORT_REQUEST') {
         void exportDoc();

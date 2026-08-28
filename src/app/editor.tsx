@@ -10,7 +10,6 @@ import { DocxBridgeView, type DocxBridgeHandle } from '@/components/docx-bridge-
 import { useTheme } from '@/hooks/use-theme';
 import {
   shareDocument,
-  syncDocumentTitle,
   type DocumentItem,
 } from '@/lib/documents';
 
@@ -25,7 +24,7 @@ export default function EditorScreen() {
   const initialName =
     typeof params.name === 'string' && params.name.length > 0 ? params.name : 'Untitled.docx';
 
-  const [fileName, setFileName] = useState(initialName);
+  const fileName = initialName;
   const bridgeRef = useRef<DocxBridgeHandle>(null);
   const [docBase64, setDocBase64] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -104,24 +103,15 @@ export default function EditorScreen() {
   );
 
   const handleSaveRequested = useCallback(
-    (base64: string, title?: string) => {
+    (base64: string) => {
       void (async () => {
         const saved = await writeInPlace(base64);
         if (!saved) return;
-        let finalName = fileName;
-        if (title !== undefined && uri) {
-          try {
-            finalName = syncDocumentTitle(uri, fileName, title);
-            setFileName(finalName);
-          } catch {
-            // Keep the old name if the rename fails; the save itself succeeded.
-          }
-        }
         dirtyRef.current = false;
 
         if (pendingShareRef.current) {
           pendingShareRef.current = false;
-          const item: DocumentItem = { uri: uri!, name: finalName, size: 0, lastModified: 0 };
+          const item: DocumentItem = { uri: uri!, name: fileName, size: 0, lastModified: 0 };
           await shareDocument(item);
         }
         if (pendingExitRef.current) {

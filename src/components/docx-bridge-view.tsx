@@ -85,6 +85,14 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
     errorRef.current = onError;
     const spellResultRef = useRef(onSpellCheckResult);
     spellResultRef.current = onSpellCheckResult;
+    // The editor fires READY on every instance mount; re-sending LOAD_DOC each
+    // time makes the web editor remount in a loop (new document identity per
+    // load), which resets scroll and closes the keyboard mid-type. Send once.
+    const docSentRef = useRef(false);
+
+    useEffect(() => {
+      docSentRef.current = false;
+    }, [initialDocBase64, attempt]);
 
     useImperativeHandle(
       ref,
@@ -128,9 +136,12 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
             webRef.current?.injectJavaScript(
               injectMessage(encodeNativeMessage({ type: 'SET_THEME', value: themeValue })),
             );
-            webRef.current?.injectJavaScript(
-              injectMessage(encodeNativeMessage({ type: 'LOAD_DOC', base64: initialDocBase64 })),
-            );
+            if (!docSentRef.current) {
+              docSentRef.current = true;
+              webRef.current?.injectJavaScript(
+                injectMessage(encodeNativeMessage({ type: 'LOAD_DOC', base64: initialDocBase64 })),
+              );
+            }
             break;
           case 'DIRTY':
             dirtyChangeRef.current(msg.value);
