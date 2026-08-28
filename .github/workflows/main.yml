@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install editor-web dependencies
+        run: npm ci --prefix editor-web
+
       - name: Generate Expo type env
         run: echo '/// <reference types="expo/types" />' > expo-env.d.ts
 
