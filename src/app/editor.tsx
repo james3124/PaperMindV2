@@ -1,11 +1,9 @@
 import { File, Paths } from 'expo-file-system';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as Sharing from 'expo-sharing';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, StyleSheet, Text, View } from 'react-native';
 
 import { DocxBridgeView, type DocxBridgeHandle } from '@/components/docx-bridge-view';
-import { DOCX_MIME } from '@/lib/docx-bridge';
 
 export default function EditorScreen() {
   const params = useLocalSearchParams<{ uri?: string; name?: string }>();
@@ -41,14 +39,11 @@ export default function EditorScreen() {
     };
   }, [uri]);
 
-  const writeAndShare = useCallback(
+  const writeInPlace = useCallback(
     async (base64: string): Promise<boolean> => {
       try {
-        const outFile = new File(Paths.cache, fileName);
+        const outFile = uri ? new File(uri) : new File(Paths.document, fileName);
         outFile.write(base64, { encoding: 'base64' });
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(outFile.uri, { mimeType: DOCX_MIME });
-        }
         dirtyRef.current = false;
         return true;
       } catch {
@@ -56,20 +51,20 @@ export default function EditorScreen() {
         return false;
       }
     },
-    [fileName],
+    [uri, fileName],
   );
 
   const handleSaveRequested = useCallback(
     (base64: string) => {
       void (async () => {
-        const saved = await writeAndShare(base64);
+        const saved = await writeInPlace(base64);
         if (saved && pendingExitRef.current) {
           pendingExitRef.current = false;
           router.back();
         }
       })();
     },
-    [writeAndShare, router],
+    [writeInPlace, router],
   );
 
   const confirmDiscard = useCallback(() => {
