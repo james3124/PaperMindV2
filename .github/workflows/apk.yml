@@ -1,0 +1,59 @@
+name: build-apk
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version code
+        run: |
+          python3 - <<EOF
+          import json
+          cfg = json.load(open('app.json'))
+          cfg['expo'].setdefault('android', {})['versionCode'] = ${{ github.run_number }}
+          json.dump(cfg, open('app.json', 'w'), indent=2)
+          EOF
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/PaperMind.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: PaperMind v1.0.${{ github.run_number }}
+          body: Automatic APK build from master.
+          files: dist/PaperMind.apk
+          make_latest: true
