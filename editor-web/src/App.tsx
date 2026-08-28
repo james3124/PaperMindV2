@@ -1,7 +1,9 @@
-import { DocxEditor, type DocxEditorRef } from '@docx-editor.dev/react';
+import { DocxEditor, type Editor } from '@docx-editor.dev/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@docx-editor.dev/react/styles.css';
+import './styles/ribbon.css';
+import { Ribbon } from './components/ribbon';
 import { SpellCheckPanel } from './components/spell-check-panel';
 import {
   base64ToBytes,
@@ -24,7 +26,7 @@ type SpellPanelState = {
 const SPELL_PANEL_CLOSED: SpellPanelState = { open: false, checking: false, items: [], fixed: 0 };
 
 export default function App() {
-  const editorRef = useRef<DocxEditorRef>(null);
+  const editorRef = useRef<Editor | null>(null);
   const [document, setDocument] = useState<ArrayBuffer | undefined>();
   const [title, setTitle] = useState('Untitled');
   const [colorMode, setColorMode] = useState<'light' | 'dark'>('light');
@@ -32,7 +34,6 @@ export default function App() {
   // Revision of the last save we handed to the host; used to derive DIRTY.
   const savedRevision = useRef<number | null>(null);
   const reportedDirty = useRef(false);
-  const editorReady = useRef(false);
   const lastErrorPost = useRef(0);
   const ignoredWords = useRef<Set<string>>(new Set());
   const spellPanelRef = useRef(spellPanel);
@@ -148,10 +149,6 @@ export default function App() {
     window.addEventListener('error', onErrorEvent);
     window.addEventListener('unhandledrejection', onUnhandledRejection);
 
-    if (editorReady.current === false && !('ReactNativeWebView' in globalThis)) {
-      // Browser dev fallback without the host app — editor mounts empty.
-      void editorRef.current?.load('blank');
-    }
     return () => {
       window.removeEventListener('message', onMessage);
       window.removeEventListener('error', onErrorEvent);
@@ -160,28 +157,33 @@ export default function App() {
   }, [exportDoc, openSpellCheck, reportError]);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <DocxEditor
-        ref={editorRef}
-        colorMode={colorMode}
-        mode="edit"
-        title={title}
-        onTitleChange={setTitle}
+    <div
+      className={`docx-editor${colorMode === 'dark' ? ' dark' : ''}`}
+      style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+    >
+      <DocxEditor.Root
         document={document}
-        onSave={() => void exportDoc()}
+        mode="edit"
+        onReady={(editor) => {
+          editorRef.current = editor;
+          postToNative({ type: 'READY' });
+          if (!('ReactNativeWebView' in globalThis)) {
+            // Browser dev fallback without the host app — editor mounts empty.
+            editor.load('blank');
+          }
+        }}
         onChange={() => {
           const revision = editorRef.current?.getDocumentHandle()?.revision ?? null;
           if (revision !== null && revision !== savedRevision.current) {
             reportDirty(true);
           }
         }}
-        onReady={(editor) => {
-          editorReady.current = true;
-          postToNative({ type: 'READY' });
-          // Keep a reference alive for dev-mode blank loads after mount.
-          void editor;
-        }}
-      />
+      >
+        <Ribbon />
+        <DocxEditor.Viewport style={{ flex: 1, minHeight: 0 }}>
+          <DocxEditor.Content />
+        </DocxEditor.Viewport>
+      </DocxEditor.Root>
 
       {spellPanel.open && (
         <SpellCheckPanel

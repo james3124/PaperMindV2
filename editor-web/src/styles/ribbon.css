@@ -1,0 +1,44 @@
+/* PaperMind ribbon: Word-style tab strip above the engine toolbar.
+   The tab strip scrolls horizontally (plain buttons, no popups); the
+   toolbar row itself must NOT scroll — the engine positions its picker
+   popups inside the bar, and overflow clipping would cut them off. */
+
+.pm-ribbon {
+  flex-shrink: 0;
+  background: var(--doc-bg);
+  border-bottom: 1px solid var(--doc-border);
+}
+
+.pm-ribbon__tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--doc-border-light);
+}
+
+.pm-ribbon__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.pm-ribbon__tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--doc-page-text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pm-ribbon__tab--active {
+  color: var(--doc-accent);
+  border-bottom-color: var(--doc-accent);
+  font-weight: 600;
+}
+
+.pm-ribbon__body {
+  padding: 2px 6px;
+}
