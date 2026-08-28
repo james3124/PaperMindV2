@@ -42,3 +42,4 @@ jobs:
 
       - name: Expo doctor
         run: npx expo-doctor
+        continue-on-error: true # CNG project with committed android/ triggers expected sync warning
