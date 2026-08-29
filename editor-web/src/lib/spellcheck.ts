@@ -11,41 +11,64 @@ function checker(): NSpell {
   return instance;
 }
 
-const WT_RE = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g;
+/** Parse the dictionary during idle time so the first check doesn't jank. */
+export function warmSpellchecker(): void {
+  if (instance) return;
+  const g = globalThis as { requestIdleCallback?: (cb: () => void) => void };
+  if (typeof g.requestIdleCallback === 'function') g.requestIdleCallback(() => void checker());
+  else setTimeout(() => void checker(), 300);
+}
 
 const XML_ENTITIES: Record<string, string> = {
-  '&amp;': '&',
-  '&lt;': '<',
-  '&gt;': '>',
-  '&quot;': '"',
-  '&apos;': "'",
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
 };
 
 function decodeXmlEntities(text: string): string {
-  return text.replace(/&(?:amp|lt|gt|quot|apos);/g, (entity) => XML_ENTITIES[entity]);
+  return text.replace(/&(amp|lt|gt|quot|apos);/g, (_entity, name: string) => XML_ENTITIES[name]);
+}
+
+// document.xml plus the story parts Word spell-checks; fixes stay body-scoped.
+const TEXT_PART_RE = /^word\/(?:document|header\d*|footer\d*|footnotes|endnotes)\.xml$/;
+
+// Runs of text interleaved with tabs/breaks; separators become spaces so
+// adjacent words never fuse into a false positive ("Hello<tab>World").
+const TEXT_OR_SEP_RE = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:(?:tab|br|noBreakHyphen)(?:\s[^>]*)?\/>/g;
+
+function extractParagraphText(part: string): string {
+  let text = '';
+  let match: RegExpExecArray | null;
+  TEXT_OR_SEP_RE.lastIndex = 0;
+  while ((match = TEXT_OR_SEP_RE.exec(part)) !== null) {
+    text += match[1] !== undefined ? match[1] : ' ';
+  }
+  return text;
 }
 
 /**
- * Extracts the readable text of the main document part from .docx bytes,
- * one paragraph per line. Returns '' when the package cannot be read.
+ * Extracts readable text from .docx bytes, one paragraph per line, across the
+ * body, headers, footers, footnotes, and endnotes. Returns null when the
+ * package cannot be read — callers must treat null as failure, not "clean".
  */
-export function extractDocumentText(docxBytes: Uint8Array): string {
+export function extractDocumentText(docxBytes: Uint8Array): string | null {
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(docxBytes);
+    // Only inflate the XML parts we read; embedded images can dwarf them.
+    entries = unzipSync(docxBytes, { filter: (file) => TEXT_PART_RE.test(file.name) });
   } catch {
-    return '';
+    return null;
   }
-  const xml = entries['word/document.xml'];
-  if (!xml) return '';
-  const source = strFromU8(xml);
+  const names = Object.keys(entries).sort();
+  if (names.length === 0) return null;
   const paragraphs: string[] = [];
-  for (const part of source.split('</w:p>')) {
-    let text = '';
-    let match: RegExpExecArray | null;
-    WT_RE.lastIndex = 0;
-    while ((match = WT_RE.exec(part))) text += match[1];
-    if (text) paragraphs.push(decodeXmlEntities(text));
+  for (const name of names) {
+    for (const part of strFromU8(entries[name]).split('</w:p>')) {
+      const text = decodeXmlEntities(extractParagraphText(part));
+      if (text) paragraphs.push(text);
+    }
   }
   return paragraphs.join('\n');
 }
@@ -55,11 +78,12 @@ export type Misspelling = {
   suggestions: string[];
 };
 
-const WORD_RE = /[A-Za-z]+(?:['’][A-Za-z]+)*/g;
+const URLISH_RE = /(?:https?:\/\/|www\.)\S+|\S+@\S+\.\S+/gi;
+const WORD_RE = /\p{L}+(?:['’]\p{L}+)*/gu;
 
 /**
  * Unique misspelled words in document order, deduplicated case-insensitively.
- * Skips single letters, ALL-CAPS acronyms, and words the user ignored.
+ * Skips URLs/emails, single letters, ALL-CAPS acronyms, and ignored words.
  */
 export function findMisspellings(
   text: string,
@@ -70,9 +94,10 @@ export function findMisspellings(
   const seen = new Set<string>();
   for (const word of ignored) seen.add(word.toLowerCase());
   const results: Misspelling[] = [];
+  const clean = text.replace(URLISH_RE, ' ');
   let match: RegExpExecArray | null;
   WORD_RE.lastIndex = 0;
-  while ((match = WORD_RE.exec(text)) !== null && results.length < limit) {
+  while ((match = WORD_RE.exec(clean)) !== null && results.length < limit) {
     const word = match[0].replace(/’/g, "'");
     if (word.length < 2 || word === word.toUpperCase()) continue;
     const key = word.toLowerCase();

@@ -2,69 +2,110 @@ import { describe, expect, it } from 'vitest';
 
 import { extractDocumentText, findMisspellings } from './spellcheck';
 
-function docxWithText(text: string): Uint8Array {
-  // Build a minimal docx (zip) in-memory is heavy; instead test the XML
-  // extraction via a stored-entry zip produced by the same code path the
-  // editor exports. For unit purposes we craft the zip manually.
-  const xml =
-    '<?xml version="1.0"?><w:document><w:body>' +
-    `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>` +
-    '</w:body></w:document>';
-  return makeZip('word/document.xml', xml);
-}
-
-/** Minimal ZIP (stored, no compression) writer for tests. */
-function makeZip(entryName: string, content: string): Uint8Array {
-  const nameBytes = new TextEncoder().encode(entryName);
-  const data = new TextEncoder().encode(content);
-  const crc = crc32(data);
-
-  const local = new Uint8Array(30 + nameBytes.length + data.length);
-  const lv = new DataView(local.buffer);
-  lv.setUint32(0, 0x04034b50, true);
-  lv.setUint16(4, 20, true);
-  lv.setUint16(6, 0, true);
-  lv.setUint16(8, 0, true); // stored
-  lv.setUint16(10, 0, true);
-  lv.setUint16(12, 0, true);
-  lv.setUint32(14, crc, true);
-  lv.setUint32(18, data.length, true);
-  lv.setUint32(22, data.length, true);
-  lv.setUint16(26, nameBytes.length, true);
-  lv.setUint16(28, 0, true);
-  local.set(nameBytes, 30);
-  local.set(data, 30 + nameBytes.length);
-
-  const central = new Uint8Array(46 + nameBytes.length);
-  const cv = new DataView(central.buffer);
-  cv.setUint32(0, 0x02014b50, true);
-  cv.setUint16(4, 20, true);
-  cv.setUint16(6, 20, true);
-  cv.setUint16(8, 0, true);
-  cv.setUint16(10, 0, true);
-  cv.setUint16(12, 0, true);
-  cv.setUint16(14, 0, true);
-  cv.setUint32(16, crc, true);
-  cv.setUint32(20, data.length, true);
-  cv.setUint32(24, data.length, true);
-  cv.setUint16(28, nameBytes.length, true);
-  cv.setUint32(42, 0, true);
-  central.set(nameBytes, 46);
-
+function docxWithParts(parts: Record<string, string>): Uint8Array {
+  const encoder = new TextEncoder();
+  const encoded = Object.entries(parts).map(([name, xml]) => ({
+    name: encoder.encode(name),
+    data: encoder.encode(xml),
+  }));
+  const locals = encoded.map(({ name, data }) => {
+    const local = new Uint8Array(30 + name.length + data.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint32(14, crc32(data), true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, data.length, true);
+    lv.setUint16(26, name.length, true);
+    local.set(name, 30);
+    local.set(data, 30 + name.length);
+    return { local, name, data };
+  });
+  let centralLen = 0;
+  let localOffset = 0;
+  const centrals = locals.map(({ local, name, data }) => {
+    const central = new Uint8Array(46 + name.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint32(16, crc32(data), true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(42, localOffset, true);
+    central.set(name, 46);
+    centralLen += central.length;
+    localOffset += local.length;
+    return central;
+  });
   const end = new Uint8Array(22);
   const ev = new DataView(end.buffer);
   ev.setUint32(0, 0x06054b50, true);
-  ev.setUint16(8, 1, true);
-  ev.setUint16(10, 1, true);
-  ev.setUint32(12, central.length, true);
-  ev.setUint32(16, local.length, true);
-
-  const out = new Uint8Array(local.length + central.length + end.length);
-  out.set(local, 0);
-  out.set(central, local.length);
-  out.set(end, local.length + central.length);
+  ev.setUint16(8, locals.length, true);
+  ev.setUint16(10, locals.length, true);
+  ev.setUint32(12, centralLen, true);
+  ev.setUint32(16, localOffset, true);
+  const out = new Uint8Array(localOffset + centralLen + 22);
+  let pos = 0;
+  for (const { local } of locals) {
+    out.set(local, pos);
+    pos += local.length;
+  }
+  for (const central of centrals) {
+    out.set(central, pos);
+    pos += central.length;
+  }
+  out.set(end, pos);
   return out;
 }
+
+function docxWithBodyText(inner: string): Uint8Array {
+  return docxWithParts({
+    'word/document.xml':
+      '<?xml version="1.0"?><w:document><w:body>' +
+      `<w:p><w:r>${inner}</w:r></w:p>` +
+      '</w:body></w:document>',
+  });
+}
+
+function docxWithText(text: string): Uint8Array {
+  return docxWithBodyText(`<w:t xml:space="preserve">${text}</w:t>`);
+}
+
+describe('extractDocumentText', () => {
+  it('extracts paragraph text and decodes entities', () => {
+    const text = extractDocumentText(docxWithText('Hello &amp; welcome'));
+    expect(text).toBe('Hello & welcome');
+  });
+
+  it('separates words joined by tabs and breaks', () => {
+    const text = extractDocumentText(
+      docxWithBodyText('<w:t>Hello</w:t><w:tab/><w:t>World</w:t>'),
+    );
+    expect(text).toBe('Hello World');
+  });
+
+  it('includes header and footnote parts', () => {
+    const text = extractDocumentText(
+      docxWithParts({
+        'word/document.xml':
+          '<w:document><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>',
+        'word/header1.xml':
+          '<w:hdr><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:hdr>',
+        'word/footnotes.xml':
+          '<w:footnotes><w:p><w:r><w:t>Footnote</w:t></w:r></w:p></w:footnotes>',
+      }),
+    );
+    expect(text).toContain('Body');
+    expect(text).toContain('Header');
+    expect(text).toContain('Footnote');
+  });
+
+  it('returns null for non-zip input', () => {
+    expect(extractDocumentText(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
 
 function crc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
@@ -76,17 +117,6 @@ function crc32(bytes: Uint8Array): number {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-
-describe('extractDocumentText', () => {
-  it('extracts paragraph text and decodes entities', () => {
-    const text = extractDocumentText(docxWithText('Hello &amp; welcome'));
-    expect(text).toBe('Hello & welcome');
-  });
-
-  it('returns empty for non-zip input', () => {
-    expect(extractDocumentText(new Uint8Array([1, 2, 3]))).toBe('');
-  });
-});
 
 describe('findMisspellings', () => {
   it('flags misspelled words with suggestions', () => {
@@ -110,5 +140,20 @@ describe('findMisspellings', () => {
   it('accepts contractions', () => {
     const results = findMisspellings("don't can't", new Set());
     expect(results).toHaveLength(0);
+  });
+
+  it('skips URLs and email addresses', () => {
+    const results = findMisspellings(
+      'visit https://example.com/foo or www.example.com or bob@example.com',
+      new Set(),
+    );
+    expect(results).toHaveLength(0);
+  });
+
+  it('keeps accented words whole', () => {
+    const results = findMisspellings('café naïve résumé', new Set());
+    // The tokens must be the full accented words, never fragments like "caf".
+    for (const item of results) expect(item.word).toMatch(/\p{L}+/u);
+    expect(results.map((item) => item.word)).not.toContain('caf');
   });
 });

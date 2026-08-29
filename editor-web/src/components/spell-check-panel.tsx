@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import type { Misspelling } from '../lib/spellcheck';
 
 type SpellCheckPanelProps = {
@@ -42,6 +44,16 @@ export function SpellCheckPanel({
         chipText: '#1a1a1a',
       };
 
+  const closePanel = checking ? () => undefined : onClose;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') closePanel();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
   return (
     <div
       style={{
@@ -52,9 +64,12 @@ export function SpellCheckPanel({
         alignItems: 'flex-end',
         zIndex: 1000,
       }}
-      onClick={onClose}
+      onClick={closePanel}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Spell check"
         onClick={(event) => event.stopPropagation()}
         style={{
           width: '100%',
@@ -80,17 +95,17 @@ export function SpellCheckPanel({
                 : ''}
           </span>
           <button
-            onClick={onClose}
+            onClick={closePanel}
             aria-label="Close spell check"
             style={{
               border: 'none',
               background: colors.element,
               color: colors.text,
-              borderRadius: 14,
-              width: 28,
-              height: 28,
-              fontSize: 14,
-              lineHeight: '28px',
+              borderRadius: 22,
+              width: 44,
+              height: 44,
+              fontSize: 16,
+              lineHeight: '44px',
               cursor: 'pointer',
             }}
           >
@@ -98,6 +113,10 @@ export function SpellCheckPanel({
           </button>
         </div>
 
+        <div
+          aria-live="polite"
+          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        >
         {checking ? (
           <div style={{ padding: '24px 0', textAlign: 'center', color: colors.secondary }}>
             Checking the document…
@@ -107,7 +126,9 @@ export function SpellCheckPanel({
             No spelling issues found ✓
           </div>
         ) : (
-          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div
+            style={{ overflowY: 'auto', minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}
+          >
             {items.map((item) => (
               <div
                 key={item.word}
@@ -139,7 +160,7 @@ export function SpellCheckPanel({
                       color: colors.secondary,
                       fontSize: 13,
                       cursor: 'pointer',
-                      padding: 4,
+                      padding: '10px 12px',
                     }}
                   >
                     Ignore
@@ -154,9 +175,9 @@ export function SpellCheckPanel({
                         style={{
                           border: `1px solid ${colors.accent}`,
                           backgroundColor: 'transparent',
-                          color: dark ? colors.accent : colors.accent,
-                          borderRadius: 14,
-                          padding: '4px 12px',
+                          color: colors.accent,
+                          borderRadius: 16,
+                          padding: '10px 14px',
                           fontSize: 14,
                           cursor: 'pointer',
                         }}
@@ -172,6 +193,7 @@ export function SpellCheckPanel({
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

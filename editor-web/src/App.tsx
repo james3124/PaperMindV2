@@ -12,7 +12,7 @@ import {
   parseNativeMessage,
   postToNative,
 } from './lib/bridge';
-import { extractDocumentText, findMisspellings, type Misspelling } from './lib/spellcheck';
+import { extractDocumentText, findMisspellings, warmSpellchecker, type Misspelling } from './lib/spellcheck';
 
 const ERROR_POST_INTERVAL_MS = 2_000;
 
@@ -92,10 +92,11 @@ export default function App() {
     try {
       const saved = await editorRef.current.save();
       const text = extractDocumentText(new Uint8Array(saved));
+      if (text === null) throw new Error('unreadable document');
       const items = findMisspellings(text, ignoredWords.current);
-      setSpellPanel((panel) => ({ ...panel, checking: false, items }));
+      setSpellPanel((panel) => (panel.open ? { ...panel, checking: false, items } : panel));
     } catch {
-      setSpellPanel((panel) => ({ ...panel, checking: false }));
+      setSpellPanel((panel) => (panel.open ? { ...panel, checking: false, items: [] } : panel));
     }
   }, []);
 
@@ -105,8 +106,11 @@ export default function App() {
       query: word,
       text: replacement,
       wholeWord: true,
+      matchCase: true,
     });
-    if (!result?.ok) return;
+    // `changed` distinguishes a real fix from a no-op (e.g. the word only
+    // exists in a header, which the body-scoped replace cannot touch).
+    if (!result?.ok || !result.changed) return;
     const key = word.toLowerCase();
     setSpellPanel((panel) => ({
       ...panel,
@@ -126,6 +130,7 @@ export default function App() {
 
   const closeSpellCheck = useCallback(() => {
     const panel = spellPanelRef.current;
+    if (panel.checking) return; // don't race the in-flight check
     postToNative({
       type: 'SPELL_CHECK_RESULT',
       fixed: panel.fixed,
@@ -147,6 +152,7 @@ export default function App() {
         loadedBase64.current = msg.base64;
         savedRevision.current = null;
         reportedDirty.current = false;
+        ignoredWords.current = new Set();
         setDocument(base64ToBytes(msg.base64).buffer as ArrayBuffer);
       } else if (msg.type === 'EXPORT_REQUEST') {
         void exportDoc();
@@ -189,6 +195,7 @@ export default function App() {
         onReady={(editor) => {
           editorRef.current = editor;
           readyRef.current = true;
+          warmSpellchecker();
           postToNative({ type: 'READY' });
           if (!('ReactNativeWebView' in globalThis)) {
             // Browser dev fallback without the host app — editor mounts empty.
