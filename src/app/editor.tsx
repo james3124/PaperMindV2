@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,12 +34,15 @@ export default function EditorScreen() {
   const router = useRouter();
   const theme = useTheme();
   const paramUri = typeof params.uri === 'string' ? params.uri : undefined;
+  // Only open files inside the app's own document library; a crafted deep
+  // link must never make the editor read or overwrite arbitrary paths.
+  const safeUri = paramUri && paramUri.startsWith(Paths.document.uri) ? paramUri : undefined;
   const initialName =
     typeof params.name === 'string' && params.name.length > 0 ? params.name : 'Untitled.docx';
 
   // Current on-disk location; changes when the document is renamed in-editor
   // so saves never write back to a stale path.
-  const [uri, setUri] = useState(paramUri);
+  const [uri, setUri] = useState(safeUri);
   const [fileName, setFileName] = useState(initialName);
   const [renameVisible, setRenameVisible] = useState(false);
   const [renameText, setRenameText] = useState('');
@@ -103,12 +106,12 @@ export default function EditorScreen() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (!paramUri) {
+      if (!safeUri) {
         setLoadError(true);
         return;
       }
       try {
-        const file = new File(paramUri);
+        const file = new File(safeUri);
         const base64 = await file.base64();
         if (!cancelled) setDocBase64(base64);
       } catch {
@@ -119,7 +122,7 @@ export default function EditorScreen() {
     return () => {
       cancelled = true;
     };
-  }, [paramUri]);
+  }, [safeUri]);
 
   useEffect(() => {
     return () => {

@@ -25,6 +25,12 @@ jobs:
       - name: Generate Expo type env
         run: echo '/// <reference types="expo/types" />' > expo-env.d.ts
 
+      - name: Verify editor bundle is fresh
+        run: |
+          npm run build:editor-web
+          git diff --exit-code src/generated/editor-html.ts assets/editor-web/index.html \
+            || { echo "::error::committed editor bundle is stale — run: npm run build:editor-web"; exit 1; }
+
       - name: Typecheck (app)
         run: npx tsc --noEmit
 

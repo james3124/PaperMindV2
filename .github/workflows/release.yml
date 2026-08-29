@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-pipeline
+  cancel-in-progress: false
+
 jobs:
   promote:
     runs-on: ubuntu-latest
@@ -20,8 +24,15 @@ jobs:
           REL_JSON=$(gh api repos/$GITHUB_REPOSITORY/releases/tags/edge)
           COMMIT=$(echo "$REL_JSON" | jq -r '.target_commitish')
           BODY=$(echo "$REL_JSON" | jq -r '.body')
-          VER=$(echo "$BODY" | grep -oE '1\.0\.[0-9]+' | head -1 || true)
-          if [ -z "$VER" ]; then VER="1.0.$(date -u +%y%m%d%H%M)"; fi
+          VER=$(echo "$BODY" | grep -oE '1\.0\.[0-9]+' | head -1)
+          if [ -z "$VER" ]; then
+            echo "::error::edge release notes carry no version stamp; refusing to invent one"
+            exit 1
+          fi
+          if gh release view "v$VER" >/dev/null 2>&1; then
+            echo "::error::v$VER already exists; edge was already promoted"
+            exit 1
+          fi
           mkdir -p dist
           gh release download edge -p PaperMind.apk -D dist
           NOTES=$(echo "$BODY" | grep -v 'Rolling pre-release' | sed 's/^Version: .*//')

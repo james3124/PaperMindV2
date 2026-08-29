@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 import { EDITOR_HTML } from '@/generated/editor-html';
@@ -196,7 +196,15 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
           key={attempt}
           ref={webRef}
           source={htmlFileUri ? { uri: htmlFileUri } : { html: EDITOR_HTML }}
-          originWhitelist={['*']}
+          // The editor page is local; anything else (a hyperlink inside an
+          // imported document) must leave the app via the browser, never
+          // navigate the in-app WebView.
+          originWhitelist={['file://*']}
+          onShouldStartLoadWithRequest={(request) => {
+            if (request.url.startsWith('file://')) return true;
+            void Linking.openURL(request.url).catch(() => {});
+            return false;
+          }}
           allowFileAccess
           domStorageEnabled
           javaScriptEnabled

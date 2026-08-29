@@ -1,24 +1,30 @@
 name: build-apk
 
 on:
-  push:
-    branches: [master]
+  workflow_run:
+    workflows: [main]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: apk-build
+  group: release-pipeline
   cancel-in-progress: true
 
 jobs:
   build:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'master')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -59,26 +65,33 @@ jobs:
           import re
           p = 'android/app/build.gradle'
           s = open(p).read()
+          original = s
           # 1. Add ABI filters inside defaultConfig (after versionName)
           s = re.sub(
               r'(versionName\s+"[^"]+")',
               r'\1\n        ndk {\n            abiFilters "arm64-v8a", "armeabi-v7a"\n        }',
               s, count=1,
           )
+          if 'abiFilters "arm64-v8a"' not in s:
+              raise SystemExit('ABI filter patch did not apply — gradle template drifted')
           # 2. Add release signingConfig (after debug block)
           s = s.replace(
               "        }\n    }\n    buildTypes {",
               "        }\n        release {\n            if (System.getenv(\"ANDROID_KEYSTORE_BASE64\")) {\n                storeFile file('papermind-release.keystore')\n                storePassword System.getenv(\"ANDROID_KEYSTORE_PASSWORD\")\n                keyAlias System.getenv(\"ANDROID_KEY_ALIAS\")\n                keyPassword System.getenv(\"ANDROID_KEY_PASSWORD\")\n            }\n        }\n    }\n    buildTypes {",
               1,
           )
+          if 'papermind-release.keystore' not in s:
+              raise SystemExit('signingConfig patch did not apply — gradle template drifted')
           # 3. Make release buildType use release signingConfig when env is present
           s = s.replace(
               "            signingConfig signingConfigs.debug\n            def enableShrinkResources",
               "            signingConfig System.getenv(\"ANDROID_KEYSTORE_BASE64\") ? signingConfigs.release : signingConfigs.debug\n            def enableShrinkResources",
               1,
           )
+          if 'signingConfigs.release' not in s:
+              raise SystemExit('buildType signing patch did not apply — gradle template drifted')
           open(p, 'w').write(s)
-          print("patched build.gradle")
+          print("patched build.gradle (all 3 substitutions verified)")
           PY
 
       - name: Build APK
@@ -94,6 +107,22 @@ jobs:
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk dist/PaperMind.apk
+
+      - name: Verify APK signature is the release key
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | head -1)
+          "$APKSIGNER" verify --print-certs dist/PaperMind.apk
+          if "$APKSIGNER" verify --print-certs dist/PaperMind.apk | grep -qi "Android Debug"; then
+            echo "::error::APK is debug-signed — refusing to publish"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaperMind-apk
+          path: dist/PaperMind.apk
+          retention-days: 14
 
       - name: Generate release notes
         run: |
