@@ -34,7 +34,8 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200
         }
-      ]
+      ],
+      "./plugins/withAllowBackup"
     ],
     "experiments": {
       "typedRoutes": true,

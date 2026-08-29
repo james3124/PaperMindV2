@@ -15,15 +15,10 @@ describe('parseWebMessage', () => {
     expect(parseWebMessage('{"type":"DIRTY","value":"yes"}')).toBeNull();
   });
 
-  it('accepts SAVE_REQUEST with base64 and optional title', () => {
+  it('accepts SAVE_REQUEST with base64', () => {
     expect(parseWebMessage('{"type":"SAVE_REQUEST","base64":"aGk="}')).toEqual({
       type: 'SAVE_REQUEST',
       base64: 'aGk=',
-    });
-    expect(parseWebMessage('{"type":"SAVE_REQUEST","base64":"aGk=","title":"Notes"}')).toEqual({
-      type: 'SAVE_REQUEST',
-      base64: 'aGk=',
-      title: 'Notes',
     });
     expect(parseWebMessage('{"type":"SAVE_REQUEST"}')).toBeNull();
   });

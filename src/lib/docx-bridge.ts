@@ -10,7 +10,7 @@ export type NativeToWebMessage =
 export type WebToNativeMessage =
   | { type: 'READY' }
   | { type: 'DIRTY'; value: boolean }
-  | { type: 'SAVE_REQUEST'; base64: string; title?: string }
+  | { type: 'SAVE_REQUEST'; base64: string }
   | { type: 'SPELL_CHECK_RESULT'; fixed: number; remaining: number }
   | { type: 'ERROR'; message: string; fatal: boolean };
 
@@ -32,13 +32,8 @@ export function parseWebMessage(raw: string): WebToNativeMessage | null {
       return { type: 'READY' };
     case 'DIRTY':
       return typeof msg.value === 'boolean' ? { type: 'DIRTY', value: msg.value } : null;
-    case 'SAVE_REQUEST': {
-      if (typeof msg.base64 !== 'string') return null;
-      const title = typeof msg.title === 'string' ? msg.title : undefined;
-      return title === undefined
-        ? { type: 'SAVE_REQUEST', base64: msg.base64 }
-        : { type: 'SAVE_REQUEST', base64: msg.base64, title };
-    }
+    case 'SAVE_REQUEST':
+      return typeof msg.base64 === 'string' ? { type: 'SAVE_REQUEST', base64: msg.base64 } : null;
     case 'SPELL_CHECK_RESULT':
       return typeof msg.fixed === 'number' && typeof msg.remaining === 'number'
         ? { type: 'SPELL_CHECK_RESULT', fixed: msg.fixed, remaining: msg.remaining }

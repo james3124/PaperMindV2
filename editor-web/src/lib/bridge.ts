@@ -7,7 +7,7 @@ export type NativeToWebMessage =
 export type WebToNativeMessage =
   | { type: 'READY' }
   | { type: 'DIRTY'; value: boolean }
-  | { type: 'SAVE_REQUEST'; base64: string; title?: string }
+  | { type: 'SAVE_REQUEST'; base64: string }
   | { type: 'SPELL_CHECK_RESULT'; fixed: number; remaining: number }
   | { type: 'ERROR'; message: string; fatal: boolean };
 
@@ -25,6 +25,11 @@ export function postToNative(message: WebToNativeMessage): void {
 
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 
+/** Accepts standard, URL-safe, and line-wrapped (Android Base64.DEFAULT) payloads. */
+function normalizeBase64(base64: string): string {
+  return base64.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+}
+
 export function parseNativeMessage(raw: unknown): NativeToWebMessage | null {
   if (typeof raw !== 'string') return null;
   let parsed: unknown;
@@ -35,8 +40,10 @@ export function parseNativeMessage(raw: unknown): NativeToWebMessage | null {
   }
   if (typeof parsed !== 'object' || parsed === null || !('type' in parsed)) return null;
   const msg = parsed as Record<string, unknown>;
-  if (msg.type === 'LOAD_DOC' && typeof msg.base64 === 'string' && BASE64_RE.test(msg.base64)) {
-    return { type: 'LOAD_DOC', base64: msg.base64 };
+  if (msg.type === 'LOAD_DOC' && typeof msg.base64 === 'string') {
+    const compact = normalizeBase64(msg.base64);
+    if (BASE64_RE.test(compact)) return { type: 'LOAD_DOC', base64: compact };
+    return null;
   }
   if (msg.type === 'EXPORT_REQUEST') return { type: 'EXPORT_REQUEST' };
   if (msg.type === 'SPELL_CHECK_REQUEST') return { type: 'SPELL_CHECK_REQUEST' };
@@ -46,9 +53,9 @@ export function parseNativeMessage(raw: unknown): NativeToWebMessage | null {
   return null;
 }
 
-/** Base64 -> Uint8Array. Handles both standard and URL-safe alphabets. */
+/** Base64 -> Uint8Array. Handles standard, URL-safe, and line-wrapped alphabets. */
 export function base64ToBytes(base64: string): Uint8Array {
-  const normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
+  const normalized = normalizeBase64(base64);
   const binary = atob(normalized);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -65,13 +72,12 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** A docx is an OPC package: a ZIP whose first entry is `[Content_Types].xml`. */
+/**
+ * A docx is an OPC package: a ZIP whose first entry is `[Content_Types].xml`.
+ * Checked on the base64 text ("UEsD" = PK\x03\x04) to avoid decoding the whole
+ * payload just to inspect three magic bytes.
+ */
 export function looksLikeDocx(base64: string): boolean {
-  let bytes: Uint8Array;
-  try {
-    bytes = base64ToBytes(base64);
-  } catch {
-    return false;
-  }
-  return bytes.length > 100 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  const compact = normalizeBase64(base64);
+  return compact.length > 134 && compact.startsWith('UEsD');
 }

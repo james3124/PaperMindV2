@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TEMPLATES } from '@/generated/templates';
+import {
+  createDocumentFromTemplate,
+  deleteDocument,
+  importDocument,
+  listDocuments,
+  renameDocument,
+} from '@/lib/documents';
+
 const { MemFile, MemDir, resetFs } = vi.hoisted(() => {
   const store = new Map<string, { data: Uint8Array; mtime: number }>();
   class MemFile {
@@ -84,14 +93,6 @@ vi.mock('expo-sharing', () => ({
   shareAsync: async () => {},
 }));
 
-import { TEMPLATES } from '@/generated/templates';
-import {
-  createDocumentFromTemplate,
-  deleteDocument,
-  importDocument,
-  listDocuments,
-  renameDocument,
-} from '@/lib/documents';
 
 const blank = TEMPLATES.find((t) => t.id === 'blank')!;
 const report = TEMPLATES.find((t) => t.id === 'report')!;

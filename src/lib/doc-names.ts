@@ -2,13 +2,17 @@ export const DOCX_EXT = '.docx';
 export const BLANK_BASE = 'Untitled';
 
 const INVALID_FILENAME_CHARS = /[\\/:*?"<>|]+/g;
+const CONTROL_AND_BIDI_CHARS = /[\u0000-\u001f\u007f\u200b-\u200f]/g;
 
 /**
  * Turns arbitrary user input into a safe file-name base (no extension,
- * no path-hostile characters, never empty).
+ * no path-hostile characters, never empty). NFC-normalized so "café" in
+ * two Unicode encodings cannot produce two visually identical files.
  */
 export function sanitizeBaseName(raw: string): string {
   const cleaned = raw
+    .normalize('NFC')
+    .replace(CONTROL_AND_BIDI_CHARS, '')
     .trim()
     .replace(INVALID_FILENAME_CHARS, ' ')
     .replace(/\s{2,}/g, ' ')

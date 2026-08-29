@@ -70,6 +70,8 @@ describe('looksLikeDocx', () => {
     const bytes = new Uint8Array(200);
     bytes[0] = 0x50; // 'P'
     bytes[1] = 0x4b; // 'K'
+    bytes[2] = 0x03;
+    bytes[3] = 0x04;
     expect(looksLikeDocx(base64Of(bytes))).toBe(true);
   });
 

@@ -53,6 +53,7 @@ export default function HomeScreen() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
 
   useEffect(() => {
+    if (__DEV__) return; // dev builds carry a placeholder version; the banner would always show
     const current = Constants.expoConfig?.version;
     if (!current || Platform.OS === 'web') return;
     const controller = new AbortController();
@@ -81,8 +82,6 @@ export default function HomeScreen() {
       reload();
     }, [reload]),
   );
-
-  useEffect(() => () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut), []);
 
   function openTemplateSheet() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

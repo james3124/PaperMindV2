@@ -60,7 +60,7 @@ export type DocxBridgeHandle = {
 
 type DocxBridgeViewProps = {
   initialDocBase64: string;
-  onSaveRequested: (base64: string, title?: string) => void;
+  onSaveRequested: (base64: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   onError: (message: string, fatal: boolean) => void;
   onSpellCheckResult?: (fixed: number, remaining: number) => void;
@@ -156,7 +156,7 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
             dirtyChangeRef.current(msg.value);
             break;
           case 'SAVE_REQUEST':
-            saveRequestedRef.current(msg.base64, msg.title);
+            saveRequestedRef.current(msg.base64);
             break;
           case 'ERROR':
             errorRef.current(msg.message, msg.fatal);
