@@ -12,7 +12,7 @@ export type WebToNativeMessage =
   | { type: 'DIRTY'; value: boolean }
   | { type: 'SAVE_REQUEST'; base64: string; title?: string }
   | { type: 'SPELL_CHECK_RESULT'; fixed: number; remaining: number }
-  | { type: 'ERROR'; message: string };
+  | { type: 'ERROR'; message: string; fatal: boolean };
 
 export function encodeNativeMessage(message: NativeToWebMessage): string {
   return JSON.stringify(message);
@@ -44,7 +44,11 @@ export function parseWebMessage(raw: string): WebToNativeMessage | null {
         ? { type: 'SPELL_CHECK_RESULT', fixed: msg.fixed, remaining: msg.remaining }
         : null;
     case 'ERROR':
-      return typeof msg.message === 'string' ? { type: 'ERROR', message: msg.message } : null;
+      // Missing `fatal` defaults to true so an older bundle can never silently
+      // swallow a load failure.
+      return typeof msg.message === 'string'
+        ? { type: 'ERROR', message: msg.message, fatal: msg.fatal !== false }
+        : null;
     default:
       return null;
   }

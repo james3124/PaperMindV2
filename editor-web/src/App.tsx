@@ -41,12 +41,18 @@ export default function App() {
   // LOAD_DOC on every READY; loading the same bytes again would remount the
   // editor (new document identity), resetting scroll and closing the keyboard.
   const loadedBase64 = useRef<string | null>(null);
+  const readyRef = useRef(false);
+  // Host requests that arrived before the editor instance existed; flushed on ready.
+  const pendingActionRef = useRef<'export' | 'spell' | null>(null);
 
-  const reportError = useCallback((message: string) => {
-    const now = Date.now();
-    if (now - lastErrorPost.current < ERROR_POST_INTERVAL_MS) return;
-    lastErrorPost.current = now;
-    postToNative({ type: 'ERROR', message: message.slice(0, 200) });
+  const reportError = useCallback((message: string, fatal: boolean) => {
+    // Rate-limit only benign noise; a fatal error must always reach the host.
+    if (!fatal) {
+      const now = Date.now();
+      if (now - lastErrorPost.current < ERROR_POST_INTERVAL_MS) return;
+      lastErrorPost.current = now;
+    }
+    postToNative({ type: 'ERROR', message: message.slice(0, 200), fatal });
   }, []);
 
   const reportDirty = useCallback((dirty: boolean) => {
@@ -56,24 +62,35 @@ export default function App() {
   }, []);
 
   const exportDoc = useCallback(async () => {
-    const saved = await editorRef.current?.save();
-    if (!saved) return;
+    const editor = editorRef.current;
+    if (!editor) {
+      pendingActionRef.current = 'export';
+      return;
+    }
+    // Capture the revision BEFORE serializing: edits typed during save() must
+    // keep the document dirty, or they would be marked clean and lost on exit.
+    const revisionBefore = editor.getDocumentHandle()?.revision ?? null;
+    const saved = await editor.save();
     postToNative({
       type: 'SAVE_REQUEST',
       base64: bytesToBase64(new Uint8Array(saved)),
     });
-    savedRevision.current = editorRef.current?.getDocumentHandle()?.revision ?? null;
-    reportDirty(false);
-  }, [reportDirty]);
+    savedRevision.current = revisionBefore;
+    const revisionNow = editor.getDocumentHandle()?.revision ?? null;
+    const dirtyNow = revisionNow !== revisionBefore;
+    // Always post after a save so the host can reschedule autosave if still dirty.
+    reportedDirty.current = dirtyNow;
+    postToNative({ type: 'DIRTY', value: dirtyNow });
+  }, []);
 
   const openSpellCheck = useCallback(async () => {
+    if (!editorRef.current) {
+      pendingActionRef.current = 'spell';
+      return;
+    }
     setSpellPanel({ open: true, checking: true, items: [], fixed: 0 });
     try {
-      const saved = await editorRef.current?.save();
-      if (!saved) {
-        setSpellPanel((panel) => ({ ...panel, checking: false }));
-        return;
-      }
+      const saved = await editorRef.current.save();
       const text = extractDocumentText(new Uint8Array(saved));
       const items = findMisspellings(text, ignoredWords.current);
       setSpellPanel((panel) => ({ ...panel, checking: false, items }));
@@ -123,7 +140,7 @@ export default function App() {
       if (!msg) return;
       if (msg.type === 'LOAD_DOC') {
         if (!looksLikeDocx(msg.base64)) {
-          reportError('not-a-docx');
+          reportError('not-a-docx', true);
           return;
         }
         if (loadedBase64.current === msg.base64) return;
@@ -141,13 +158,15 @@ export default function App() {
     }
     window.addEventListener('message', onMessage);
 
-    // Parse/async failures inside the editor surface here; report them to the host.
+    // Errors before READY mean the document never opened (fatal to the session);
+    // after READY they are benign runtime noise (e.g. ResizeObserver loop) that
+    // must not eject the user from their unsaved document.
     function onErrorEvent(event: ErrorEvent) {
-      if (event.message) reportError(event.message);
+      if (event.message) reportError(event.message, !readyRef.current);
     }
     function onUnhandledRejection(event: PromiseRejectionEvent) {
       const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
-      if (reason) reportError(reason);
+      if (reason) reportError(reason, !readyRef.current);
     }
     window.addEventListener('error', onErrorEvent);
     window.addEventListener('unhandledrejection', onUnhandledRejection);
@@ -169,11 +188,16 @@ export default function App() {
         mode="edit"
         onReady={(editor) => {
           editorRef.current = editor;
+          readyRef.current = true;
           postToNative({ type: 'READY' });
           if (!('ReactNativeWebView' in globalThis)) {
             // Browser dev fallback without the host app — editor mounts empty.
             editor.load('blank');
           }
+          const pending = pendingActionRef.current;
+          pendingActionRef.current = null;
+          if (pending === 'export') void exportDoc();
+          else if (pending === 'spell') void openSpellCheck();
         }}
         onChange={() => {
           const revision = editorRef.current?.getDocumentHandle()?.revision ?? null;

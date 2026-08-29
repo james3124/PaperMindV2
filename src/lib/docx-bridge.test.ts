@@ -32,7 +32,11 @@ describe('parseWebMessage', () => {
     expect(parseWebMessage('{"type":"ERROR","message":"not-a-docx"}')).toEqual({
       type: 'ERROR',
       message: 'not-a-docx',
+      fatal: true,
     });
+    expect(
+      parseWebMessage('{"type":"ERROR","message":"ResizeObserver loop","fatal":false}'),
+    ).toEqual({ type: 'ERROR', message: 'ResizeObserver loop', fatal: false });
     expect(parseWebMessage('{"type":"ERROR"}')).toBeNull();
   });
 

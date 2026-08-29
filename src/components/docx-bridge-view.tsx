@@ -21,21 +21,30 @@ const READY_TIMEOUT_MS = 10_000;
  * Writes the (large) editor HTML to the cache directory once and returns its
  * file URI, so the WebView loads from disk instead of parsing an inline
  * string on every open. Returns null to fall back to inline loading.
- * The file name carries the bundle length, so app updates that change the
- * editor automatically invalidate the cached copy.
+ * The file name carries the bundle length, and the cached copy is validated
+ * against the UTF-8 byte length, so app updates and truncated writes both
+ * invalidate it. The write goes to a temp file first and is moved into place,
+ * so a kill mid-write can never leave a half-written cache file.
  */
 function ensureEditorHtmlFile(): string | null {
   try {
+    const expectedBytes = new TextEncoder().encode(EDITOR_HTML).length;
     const name = `papermind-editor-${EDITOR_HTML.length}.html`;
     const file = new File(Paths.cache, name);
-    if (!file.exists) {
-      for (const entry of Paths.cache.list()) {
-        if (entry instanceof File && entry.name.startsWith('papermind-editor-')) {
-          entry.delete();
-        }
+    if (file.exists && file.size === expectedBytes) return file.uri;
+    for (const entry of Paths.cache.list()) {
+      if (entry instanceof File && entry.name.startsWith('papermind-editor-')) {
+        entry.delete();
       }
-      file.write(EDITOR_HTML);
     }
+    const tmp = new File(Paths.cache, `${name}.tmp`);
+    if (tmp.exists) tmp.delete();
+    tmp.write(EDITOR_HTML);
+    if (tmp.size !== expectedBytes) {
+      tmp.delete();
+      return null;
+    }
+    tmp.moveSync(file, { overwrite: true });
     return file.uri;
   } catch {
     return null;
@@ -53,7 +62,7 @@ type DocxBridgeViewProps = {
   initialDocBase64: string;
   onSaveRequested: (base64: string, title?: string) => void;
   onDirtyChange: (dirty: boolean) => void;
-  onError: (message: string) => void;
+  onError: (message: string, fatal: boolean) => void;
   onSpellCheckResult?: (fixed: number, remaining: number) => void;
 };
 
@@ -150,7 +159,7 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
             saveRequestedRef.current(msg.base64, msg.title);
             break;
           case 'ERROR':
-            errorRef.current(msg.message);
+            errorRef.current(msg.message, msg.fatal);
             break;
           case 'SPELL_CHECK_RESULT':
             spellResultRef.current?.(msg.fixed, msg.remaining);
@@ -169,7 +178,11 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
               styles.retry,
               pressed && { opacity: 0.7 },
             ]}
-            onPress={() => setAttempt((a) => a + 1)}
+            onPress={() => {
+              setFailed(false);
+              setReady(false);
+              setAttempt((a) => a + 1);
+            }}
           >
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
@@ -189,6 +202,9 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
           javaScriptEnabled
           onMessage={handleMessage}
           onError={() => setFailed(true)}
+          // Android kills the renderer under memory pressure; surface it as the
+          // retryable failure state instead of a permanently blank editor.
+          onRenderProcessGone={() => setFailed(true)}
           // Android: never inflate text to match the system font scale — it reads
           // as the page zooming whenever an input is focused, and breaks layout.
           textZoom={100}

@@ -9,7 +9,7 @@ export type WebToNativeMessage =
   | { type: 'DIRTY'; value: boolean }
   | { type: 'SAVE_REQUEST'; base64: string; title?: string }
   | { type: 'SPELL_CHECK_RESULT'; fixed: number; remaining: number }
-  | { type: 'ERROR'; message: string };
+  | { type: 'ERROR'; message: string; fatal: boolean };
 
 export function postToNative(message: WebToNativeMessage): void {
   const bridge = (globalThis as unknown as {

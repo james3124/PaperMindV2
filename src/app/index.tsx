@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   LayoutAnimation,
@@ -65,11 +65,19 @@ export default function HomeScreen() {
 
   const reload = useCallback((animate = false) => {
     if (animate) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setDocuments(listDocuments());
+    try {
+      setDocuments(listDocuments());
+    } catch {
+      toast('Could not read the document library');
+    }
   }, []);
+
+  // Latch navigation so a double-tap cannot open two editors on one document.
+  const navigatingRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
+      navigatingRef.current = false;
       reload();
     }, [reload]),
   );
@@ -81,11 +89,19 @@ export default function HomeScreen() {
     setTemplateSheetVisible(true);
   }
 
+  function openEditor(item: DocumentItem) {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+    router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
+  }
+
   function createFromTemplate(template: TemplateDef) {
     setTemplateSheetVisible(false);
-    const item = createDocumentFromTemplate(template);
-    reload(true);
-    router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
+    try {
+      openEditor(createDocumentFromTemplate(template));
+    } catch {
+      toast('Could not create the document');
+    }
   }
 
   async function importFromDevice() {
@@ -95,40 +111,50 @@ export default function HomeScreen() {
     });
     if (result.canceled) return;
     const imported: DocumentItem[] = [];
+    let failed = 0;
     for (const asset of result.assets) {
       try {
         imported.push(importDocIntoLibrary(asset.uri, asset.name));
       } catch {
-        // Skip files that cannot be read; keep importing the rest.
+        failed += 1;
       }
     }
-    if (imported.length === 0) return;
+    if (imported.length === 0) {
+      toast(failed > 0 ? `Could not import ${failed} file${failed === 1 ? '' : 's'}` : 'Nothing imported');
+      return;
+    }
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     reload(true);
+    if (failed > 0) toast(`Imported ${imported.length}, failed ${failed}`);
     if (imported.length === 1) {
-      const item = imported[0];
-      router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
-    } else {
-      toast(`Imported ${imported.length} documents`);
+      openEditor(imported[0]);
     }
   }
 
   function openDoc(item: DocumentItem) {
-    router.push({ pathname: '/editor', params: { uri: item.uri, name: item.name } });
+    openEditor(item);
   }
 
   function doRename(item: DocumentItem, newName: string) {
-    renameDocument(item, newName);
-    reload(true);
+    try {
+      renameDocument(item, newName);
+      reload(true);
+    } catch {
+      toast('Rename failed');
+    }
   }
 
   function doShare(item: DocumentItem) {
-    void shareDocument(item);
+    shareDocument(item).catch(() => toast('Sharing failed'));
   }
 
   function doDelete(item: DocumentItem) {
-    deleteDocument(item);
-    reload(true);
+    try {
+      deleteDocument(item);
+      reload(true);
+    } catch {
+      toast('Delete failed');
+    }
   }
 
   return (

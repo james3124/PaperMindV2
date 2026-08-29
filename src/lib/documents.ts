@@ -70,13 +70,17 @@ export function createBlankDocument(): DocumentItem {
 /**
  * Creates a new document in the library from a template. The file is named
  * after the template ("Report.docx", "Report 2.docx", …); blank documents
- * keep the classic "Untitled" naming.
+ * keep the classic "Untitled" naming. Written via a temp file so a failure
+ * mid-write never leaves a truncated .docx in the library.
  */
 export function createDocumentFromTemplate(template: TemplateDef): DocumentItem {
   const base = template.id === 'blank' ? BLANK_BASE : sanitizeBaseName(template.name);
   const name = uniqueName(base);
   const file = new File(library(), name);
-  file.write(template.base64, { encoding: 'base64' });
+  const tmp = new File(library(), `${name}.tmp`);
+  if (tmp.exists) tmp.delete();
+  tmp.write(template.base64, { encoding: 'base64' });
+  tmp.moveSync(file, { overwrite: true });
   return toItem(file);
 }
 
@@ -84,7 +88,15 @@ export function importDocument(sourceUri: string, sourceName: string): DocumentI
   const base = sanitizeBaseName(sourceName);
   const name = uniqueName(base, DOCX_EXT);
   const dest = new File(library(), name);
-  new File(sourceUri).copySync(dest);
+  const tmp = new File(library(), `${name}.tmp`);
+  if (tmp.exists) tmp.delete();
+  try {
+    new File(sourceUri).copySync(tmp);
+    tmp.moveSync(dest, { overwrite: true });
+  } catch (error) {
+    if (tmp.exists) tmp.delete();
+    throw error;
+  }
   return toItem(dest);
 }
 
@@ -95,9 +107,10 @@ export function renameDocument(item: DocumentItem, newBase: string): DocumentIte
   const taken = existingNames();
   taken.delete(item.name.toLowerCase());
   const name = uniqueName(base, DOCX_EXT, taken);
-  const file = new File(item.uri);
-  file.moveSync(new File(library(), name));
-  return toItem(file);
+  const moved = new File(library(), name);
+  new File(item.uri).moveSync(moved);
+  // Describe the destination handle, not the pre-move one (stale name/uri).
+  return toItem(moved);
 }
 
 export function deleteDocument(item: DocumentItem): void {

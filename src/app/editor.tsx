@@ -3,7 +3,7 @@ import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DocxBridgeView, type DocxBridgeHandle } from '@/components/docx-bridge-view';
@@ -15,6 +15,7 @@ import {
 
 const SAVED_TOAST_MS = 1_600;
 const AUTOSAVE_DEBOUNCE_MS = 4_000;
+const EXPORT_PENDING_TIMEOUT_MS = 10_000;
 
 export default function EditorScreen() {
   const params = useLocalSearchParams<{ uri?: string; name?: string }>();
@@ -32,6 +33,8 @@ export default function EditorScreen() {
   const dirtyRef = useRef(false);
   const pendingExitRef = useRef(false);
   const pendingShareRef = useRef(false);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelledRef = useRef(false);
   const pillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autosaveActiveRef = useRef(false);
@@ -59,6 +62,26 @@ export default function EditorScreen() {
     pillTimerRef.current = setTimeout(() => setPillText(null), SAVED_TOAST_MS);
   }, []);
 
+  const clearPendingTimer = useCallback(() => {
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+  }, []);
+
+  // If the editor never answers an export request (not ready yet, or a dropped
+  // injection), release the pending flags so autosave isn't disabled forever.
+  const armPendingTimer = useCallback(() => {
+    clearPendingTimer();
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null;
+      if (!pendingShareRef.current && !pendingExitRef.current) return;
+      pendingShareRef.current = false;
+      pendingExitRef.current = false;
+      showPill('Editor not ready — try again');
+    }, EXPORT_PENDING_TIMEOUT_MS);
+  }, [clearPendingTimer, showPill]);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -82,17 +105,37 @@ export default function EditorScreen() {
 
   useEffect(() => {
     return () => {
+      cancelledRef.current = true;
       if (pillTimerRef.current) clearTimeout(pillTimerRef.current);
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
     };
   }, []);
+
+  // Flush pending edits when leaving the foreground: Android may kill the app
+  // at any time, and the 4s debounce would otherwise lose the last keystrokes.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'background' && state !== 'inactive') return;
+      if (!dirtyRef.current || pendingShareRef.current || pendingExitRef.current) return;
+      clearAutosaveTimer();
+      autosaveActiveRef.current = true;
+      bridgeRef.current?.requestExport();
+    });
+    return () => sub.remove();
+  }, [clearAutosaveTimer]);
 
   const writeInPlace = useCallback(
     async (base64: string): Promise<boolean> => {
       if (!uri) return false;
       try {
+        // Write to a sibling temp file and move it into place, so a kill or
+        // disk-full mid-write can never leave a truncated .docx at the real path.
         const outFile = new File(uri);
-        outFile.write(base64, { encoding: 'base64' });
+        const tmp = new File(`${uri}.tmp`);
+        if (tmp.exists) tmp.delete();
+        tmp.write(base64, { encoding: 'base64' });
+        tmp.moveSync(outFile, { overwrite: true });
         return true;
       } catch {
         Alert.alert('Save failed', 'The document was not saved. Your edits are still open.');
@@ -105,14 +148,26 @@ export default function EditorScreen() {
   const handleSaveRequested = useCallback(
     (base64: string) => {
       void (async () => {
+        clearPendingTimer();
+        if (cancelledRef.current) return; // user discarded; late bytes must not write
         const saved = await writeInPlace(base64);
-        if (!saved) return;
-        dirtyRef.current = false;
+        if (!saved) {
+          pendingShareRef.current = false;
+          pendingExitRef.current = false;
+          autosaveActiveRef.current = false;
+          return;
+        }
+        // dirtyRef is driven by the web's DIRTY message (it re-states its state
+        // after every save), never cleared optimistically here.
 
         if (pendingShareRef.current) {
           pendingShareRef.current = false;
           const item: DocumentItem = { uri: uri!, name: fileName, size: 0, lastModified: 0 };
-          await shareDocument(item);
+          try {
+            await shareDocument(item);
+          } catch {
+            showPill('Sharing failed');
+          }
         }
         if (pendingExitRef.current) {
           pendingExitRef.current = false;
@@ -127,11 +182,17 @@ export default function EditorScreen() {
         showPill('Saved ✓');
       })();
     },
-    [writeInPlace, uri, fileName, router, showPill],
+    [writeInPlace, uri, fileName, router, showPill, clearPendingTimer],
   );
 
   const handleBridgeError = useCallback(
-    (message: string) => {
+    (message: string, fatal: boolean) => {
+      if (!fatal) {
+        // Benign runtime noise (e.g. ResizeObserver loop) must not eject the
+        // user from an unsaved document.
+        console.warn('[editor]', message);
+        return;
+      }
       Alert.alert(
         'Could not open document',
         message === 'not-a-docx'
@@ -153,18 +214,27 @@ export default function EditorScreen() {
         text: 'Save',
         onPress: () => {
           pendingExitRef.current = true;
+          armPendingTimer();
           bridgeRef.current?.requestExport();
         },
       },
-      { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () => {
+          cancelledRef.current = true;
+          router.back();
+        },
+      },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, [fileName, router]);
+  }, [fileName, router, armPendingTimer]);
 
   const requestShare = useCallback(() => {
     pendingShareRef.current = true;
+    armPendingTimer();
     bridgeRef.current?.requestExport();
-  }, []);
+  }, [armPendingTimer]);
 
   const requestSpellCheck = useCallback(() => {
     bridgeRef.current?.requestSpellCheck();
