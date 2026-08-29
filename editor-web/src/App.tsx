@@ -56,6 +56,7 @@ export default function App() {
   // Keep the editor inside the visible area while the soft keyboard is up:
   // the visual viewport shrinks even when the WebView itself does not.
   const [viewportHeight, setViewportHeight] = useState<number | undefined>();
+  const ribbonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -85,7 +86,12 @@ export default function App() {
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const apply = () => setViewportHeight(vv.height);
+    const apply = () => {
+      // The ribbon lives inside the same fixed-height container; the editor
+      // must only see the height that is actually left for the page area.
+      const ribbonH = ribbonRef.current?.offsetHeight ?? 0;
+      setViewportHeight(vv.height - ribbonH);
+    };
     apply();
     vv.addEventListener('resize', apply);
     return () => vv.removeEventListener('resize', apply);
@@ -266,7 +272,9 @@ export default function App() {
           }
         }}
       >
-        <Ribbon onFindToggle={() => setFindOpen((open) => !open)} />
+        <div ref={ribbonRef}>
+          <Ribbon onFindToggle={() => setFindOpen((open) => !open)} />
+        </div>
         {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
         <DocxEditor.Viewport style={{ flex: 1, minHeight: 0 }}>
           <DocxEditor.Content />

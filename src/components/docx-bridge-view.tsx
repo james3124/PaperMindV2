@@ -141,10 +141,9 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
         if (!msg) return;
         switch (msg.type) {
           case 'READY':
+            // No SET_THEME here: setReady(true) re-renders and the theme
+            // useEffect below sends it exactly once.
             setReady(true);
-            webRef.current?.injectJavaScript(
-              injectMessage(encodeNativeMessage({ type: 'SET_THEME', value: themeValue })),
-            );
             if (!docSentRef.current) {
               docSentRef.current = true;
               webRef.current?.injectJavaScript(
@@ -166,7 +165,7 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
             break;
         }
       },
-      [initialDocBase64, themeValue],
+      [initialDocBase64],
     );
 
     if (failed) {

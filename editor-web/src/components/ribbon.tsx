@@ -51,14 +51,22 @@ function PanRow({ children }: { children: ReactNode }) {
         drag.current.active = true;
         drag.current.startX = event.clientX;
         drag.current.startT = drag.current.t;
+        // Capture the pointer so a fast swipe that leaves the row mid-drag
+        // keeps sending pointermove/pointerup instead of cancelling.
+        event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
         if (!drag.current.active) return;
         const dx = event.clientX - drag.current.startX;
         if (Math.abs(dx) > 6) apply(clamp(drag.current.startT + dx));
       }}
-      onPointerUp={() => {
+      onPointerUp={(event) => {
         drag.current.active = false;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onPointerCancel={(event) => {
+        drag.current.active = false;
+        event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerLeave={() => {
         drag.current.active = false;
@@ -105,10 +113,11 @@ function PaperSizePicker() {
           const size = PAPER_SIZES.find((entry) => entry.id === event.target.value);
           if (!size || !pageSetup) return;
           const landscape = pageSetup.orientation === 'landscape';
-          apply({
-            pageWidthTwips: landscape ? size.h : size.w,
-            pageHeightTwips: landscape ? size.w : size.h,
-          });
+          const newW = landscape ? size.h : size.w;
+          const newH = landscape ? size.w : size.h;
+          // Guard: skip if already at these exact dimensions
+          if (newW === pageSetup.pageWidthTwips && newH === pageSetup.pageHeightTwips) return;
+          apply({ pageWidthTwips: newW, pageHeightTwips: newH });
         }}
       >
         {!current && <option value="custom">Custom</option>}

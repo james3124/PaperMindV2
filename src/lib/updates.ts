@@ -1,10 +1,9 @@
+import { GITHUB_RELEASES_LATEST_URL } from './config';
+
 export type UpdateInfo = {
   version: string;
   url: string;
 };
-
-const RELEASES_LATEST_URL =
-  'https://api.github.com/repos/james3124/PaperMindV2/releases/latest';
 
 /** True when `candidate` is a higher dotted-numeric version than `current`. */
 export function isNewerVersion(candidate: string, current: string): boolean {
@@ -22,7 +21,7 @@ export function isNewerVersion(candidate: string, current: string): boolean {
 /** Latest release info, or null when offline / malformed. Never throws. */
 export async function fetchLatestRelease(signal?: AbortSignal): Promise<UpdateInfo | null> {
   try {
-    const res = await fetch(RELEASES_LATEST_URL, {
+    const res = await fetch(GITHUB_RELEASES_LATEST_URL, {
       headers: { Accept: 'application/vnd.github+json' },
       signal,
     });
