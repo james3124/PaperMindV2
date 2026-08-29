@@ -1,5 +1,5 @@
-import { DocxEditor } from '@docx-editor.dev/react';
-import { useState } from 'react';
+import { DocxEditor, usePageSetup } from '@docx-editor.dev/react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 const Toolbar = DocxEditor.Toolbar;
 
@@ -13,58 +13,117 @@ const TABS: readonly { id: TabId; label: string }[] = [
   { id: 'view', label: 'View' },
 ];
 
-// Which chrome slots each tab shows. Everything else is hidden via the
-// registry's `hidden` flag, so the engine keeps its default grouping and its
-// "⋯" overflow collapse (a scrolling bar would clip the picker popups).
-const TAB_SLOTS: Record<TabId, ReadonlySet<string>> = {
-  home: new Set([
-    'history.undo',
-    'history.redo',
-    'styles.style',
-    'font.family',
-    'font.size',
-    'text.bold',
-    'text.italic',
-    'text.underline',
-    'text.strike',
-    'text.color',
-    'text.highlight',
-    'text.link',
-    'script.super',
-    'script.sub',
-    'alignment.left',
-    'alignment.center',
-    'alignment.right',
-    'alignment.justify',
-    'list.bullet',
-    'list.numbered',
-    'list.lineSpacing',
-    'list.indent',
-    'list.outdent',
-    'format.clear',
-  ]),
-  insert: new Set([
-    'table.insert',
-    'image.insert',
-    'text.link',
-    'insert.pageBreak',
-    'insert.sectionBreakNextPage',
-    'insert.footnote',
-    'insert.endnote',
-    'insert.toc',
-    'insert.pageNumber',
-    'insert.totalPages',
-    'insert.pageXofY',
-    'paragraph.dialog',
-  ]),
-  layout: new Set(['file.pageSetup', 'zoom.level']),
-  review: new Set(['review.comments', 'review.editingMode']),
-  view: new Set(['zoom.level', 'contentControl.showAll']),
-};
+/**
+ * Single-row horizontal panning. The engine's picker popups are absolutely
+ * positioned inside the bar, so a real `overflow-x: auto` container would
+ * clip them; instead the row keeps `overflow: visible` and is dragged with
+ * a transform. Vertical scrolling stays native (touch-action: pan-y).
+ */
+function PanRow({ children }: { children: ReactNode }) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const drag = useRef({ active: false, startX: 0, startT: 0, t: 0 });
+
+  const clamp = useCallback((t: number) => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return t;
+    const min = Math.min(0, outer.clientWidth - inner.scrollWidth);
+    return Math.max(min, Math.min(0, t));
+  }, []);
+
+  const apply = useCallback((t: number) => {
+    drag.current.t = t;
+    if (innerRef.current) innerRef.current.style.transform = `translateX(${t}px)`;
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => apply(clamp(drag.current.t));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [apply, clamp]);
+
+  return (
+    <div
+      ref={outerRef}
+      className="pm-ribbon__pan-outer"
+      onPointerDown={(event) => {
+        drag.current.active = true;
+        drag.current.startX = event.clientX;
+        drag.current.startT = drag.current.t;
+      }}
+      onPointerMove={(event) => {
+        if (!drag.current.active) return;
+        const dx = event.clientX - drag.current.startX;
+        if (Math.abs(dx) > 6) apply(clamp(drag.current.startT + dx));
+      }}
+      onPointerUp={() => {
+        drag.current.active = false;
+      }}
+      onPointerLeave={() => {
+        drag.current.active = false;
+      }}
+      onWheel={(event) => {
+        const dx = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : 0;
+        if (dx) apply(clamp(drag.current.t + dx));
+      }}
+    >
+      <div ref={innerRef} className="pm-ribbon__pan-inner">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Common paper sizes in twips (1/20th of a point). */
+const PAPER_SIZES: readonly { id: string; label: string; w: number; h: number }[] = [
+  { id: 'letter', label: 'Letter', w: 12240, h: 15840 },
+  { id: 'a4', label: 'A4', w: 11906, h: 16838 },
+  { id: 'legal', label: 'Legal', w: 12240, h: 20160 },
+  { id: 'a3', label: 'A3', w: 16838, h: 23811 },
+  { id: 'a5', label: 'A5', w: 8391, h: 11906 },
+  { id: 'tabloid', label: 'Tabloid', w: 15840, h: 12240 },
+];
+
+function PaperSizePicker() {
+  const { pageSetup, isEnabled, apply } = usePageSetup();
+  if (!pageSetup) return null;
+  const current = PAPER_SIZES.find(
+    (size) =>
+      (size.w === pageSetup.pageWidthTwips && size.h === pageSetup.pageHeightTwips) ||
+      (size.h === pageSetup.pageWidthTwips && size.w === pageSetup.pageHeightTwips),
+  );
+  return (
+    <label className="pm-ribbon__paper">
+      <span className="pm-ribbon__paper-label">Size</span>
+      <select
+        className="pm-ribbon__paper-select"
+        aria-label="Paper size"
+        disabled={!isEnabled}
+        value={current?.id ?? 'custom'}
+        onChange={(event) => {
+          const size = PAPER_SIZES.find((entry) => entry.id === event.target.value);
+          if (!size || !pageSetup) return;
+          const landscape = pageSetup.orientation === 'landscape';
+          apply({
+            pageWidthTwips: landscape ? size.h : size.w,
+            pageHeightTwips: landscape ? size.w : size.h,
+          });
+        }}
+      >
+        {!current && <option value="custom">Custom</option>}
+        {PAPER_SIZES.map((size) => (
+          <option key={size.id} value={size.id}>
+            {size.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export function Ribbon({ onFindToggle }: { onFindToggle?: () => void }) {
   const [tab, setTab] = useState<TabId>('home');
-  const show = (slot: string) => !TAB_SLOTS[tab].has(slot);
 
   return (
     <div className="pm-ribbon">
@@ -92,59 +151,75 @@ export function Ribbon({ onFindToggle }: { onFindToggle?: () => void }) {
           </button>
         )}
       </div>
-      <Toolbar>
-        {/* Home */}
-        <Toolbar.Undo hidden={show('history.undo')} />
-        <Toolbar.Redo hidden={show('history.redo')} />
-        <Toolbar.StylePicker hidden={show('styles.style')} />
-        <Toolbar.FontFamily hidden={show('font.family')} />
-        <Toolbar.FontSize hidden={show('font.size')} />
-        <Toolbar.Bold hidden={show('text.bold')} />
-        <Toolbar.Italic hidden={show('text.italic')} />
-        <Toolbar.Underline hidden={show('text.underline')} />
-        <Toolbar.Strike hidden={show('text.strike')} />
-        <Toolbar.FontColor hidden={show('text.color')} />
-        <Toolbar.Highlight hidden={show('text.highlight')} />
-        <Toolbar.Link hidden={show('text.link')} />
-        <Toolbar.Superscript hidden={show('script.super')} />
-        <Toolbar.Subscript hidden={show('script.sub')} />
-        <Toolbar.AlignLeft hidden={show('alignment.left')} />
-        <Toolbar.AlignCenter hidden={show('alignment.center')} />
-        <Toolbar.AlignRight hidden={show('alignment.right')} />
-        <Toolbar.AlignJustify hidden={show('alignment.justify')} />
-        <Toolbar.BulletList hidden={show('list.bullet')} />
-        <Toolbar.NumberedList hidden={show('list.numbered')} />
-        <Toolbar.LineSpacing hidden={show('list.lineSpacing')} />
-        <Toolbar.Indent hidden={show('list.indent')} />
-        <Toolbar.Outdent hidden={show('list.outdent')} />
-        <Toolbar.ClearFormatting hidden={show('format.clear')} />
-        {/* Insert */}
-        <Toolbar.TableInsert hidden={show('table.insert')} />
-        <Toolbar.ImageInsert hidden={show('image.insert')} />
-        <Toolbar.Button slot="insert.pageBreak" hidden={show('insert.pageBreak')} />
-        <Toolbar.Button
-          slot="insert.sectionBreakNextPage"
-          hidden={show('insert.sectionBreakNextPage')}
-        />
-        <Toolbar.Button slot="insert.footnote" hidden={show('insert.footnote')} />
-        <Toolbar.Button slot="insert.endnote" hidden={show('insert.endnote')} />
-        <Toolbar.Button slot="insert.toc" hidden={show('insert.toc')} />
-        <Toolbar.Button slot="insert.pageNumber" hidden={show('insert.pageNumber')} />
-        <Toolbar.Button slot="insert.totalPages" hidden={show('insert.totalPages')} />
-        <Toolbar.Button slot="insert.pageXofY" hidden={show('insert.pageXofY')} />
-        <Toolbar.Button slot="paragraph.dialog" hidden={show('paragraph.dialog')} />
-        {/* Layout */}
-        <Toolbar.Button slot="file.pageSetup" hidden={show('file.pageSetup')} />
-        <Toolbar.Zoom hidden={show('zoom.level')} />
-        {/* Review */}
-        <Toolbar.Comments hidden={show('review.comments')} />
-        <Toolbar.EditingMode hidden={show('review.editingMode')} />
-        {/* View */}
-        <Toolbar.Button slot="contentControl.showAll" hidden={show('contentControl.showAll')} />
-        {/* Never hosted in the ribbon: file actions live in the native top bar. */}
-        <Toolbar.Button slot="file.open" hidden />
-        <Toolbar.Button slot="file.save" hidden />
-      </Toolbar>
+      <PanRow>
+        <Toolbar preset={false} className="pm-ribbon__body">
+          {tab === 'home' && (
+            <>
+              <Toolbar.Undo />
+              <Toolbar.Redo />
+              <Toolbar.Separator />
+              <Toolbar.StylePicker />
+              <Toolbar.FontFamily />
+              <Toolbar.FontSize />
+              <Toolbar.Separator />
+              <Toolbar.Bold />
+              <Toolbar.Italic />
+              <Toolbar.Underline />
+              <Toolbar.Strike />
+              <Toolbar.FontColor />
+              <Toolbar.Highlight />
+              <Toolbar.Separator />
+              <Toolbar.AlignLeft />
+              <Toolbar.AlignCenter />
+              <Toolbar.AlignRight />
+              <Toolbar.AlignJustify />
+              <Toolbar.BulletList />
+              <Toolbar.NumberedList />
+              <Toolbar.LineSpacing />
+              <Toolbar.Indent />
+              <Toolbar.Outdent />
+              <Toolbar.Separator />
+              <Toolbar.Link />
+              <Toolbar.ClearFormatting />
+            </>
+          )}
+          {tab === 'insert' && (
+            <>
+              <Toolbar.TableInsert />
+              <Toolbar.ImageInsert />
+              <Toolbar.Separator />
+              <Toolbar.Link />
+              <Toolbar.Button slot="insert.pageBreak" />
+              <Toolbar.Button slot="insert.footnote" />
+              <Toolbar.Button slot="insert.endnote" />
+              <Toolbar.Button slot="insert.toc" />
+              <Toolbar.Button slot="insert.pageNumber" />
+            </>
+          )}
+          {tab === 'layout' && (
+            <>
+              <PaperSizePicker />
+              <Toolbar.Separator />
+              <Toolbar.Button slot="file.pageSetup" />
+              <Toolbar.Separator />
+              <Toolbar.Zoom />
+            </>
+          )}
+          {tab === 'review' && (
+            <>
+              <Toolbar.Comments />
+              <Toolbar.EditingMode />
+            </>
+          )}
+          {tab === 'view' && (
+            <>
+              <Toolbar.Zoom />
+              <Toolbar.Separator />
+              <Toolbar.Button slot="contentControl.showAll" />
+            </>
+          )}
+        </Toolbar>
+      </PanRow>
     </div>
   );
 }

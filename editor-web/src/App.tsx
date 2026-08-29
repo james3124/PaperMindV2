@@ -1,3 +1,4 @@
+import { defaultFonts } from '@docx-editor.dev/fonts';
 import { DocxEditor, type Editor } from '@docx-editor.dev/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -46,6 +47,49 @@ export default function App() {
   const readyRef = useRef(false);
   // Host requests that arrived before the editor instance existed; flushed on ready.
   const pendingActionRef = useRef<'export' | 'spell' | null>(null);
+  // Word-metric fonts (Carlito/Caladea/Liberation) make the engine's layout
+  // match what the browser renders; without them the painted caret lands in
+  // the middle of words and pagination drifts. Documents wait for them.
+  const [fonts, setFonts] = useState<Awaited<ReturnType<typeof defaultFonts>> | undefined>();
+  const fontsRef = useRef<typeof fonts>(undefined);
+  const pendingDocRef = useRef<ArrayBuffer | null>(null);
+  // Keep the editor inside the visible area while the soft keyboard is up:
+  // the visual viewport shrinks even when the WebView itself does not.
+  const [viewportHeight, setViewportHeight] = useState<number | undefined>();
+
+  useEffect(() => {
+    let alive = true;
+    defaultFonts()
+      .then((loaded) => {
+        if (!alive) return;
+        fontsRef.current = loaded;
+        setFonts(loaded);
+        if (pendingDocRef.current) {
+          setDocument(pendingDocRef.current);
+          pendingDocRef.current = null;
+        }
+      })
+      .catch(() => {
+        // Degrade to the engine's fixed-width measurement rather than block editing.
+        if (!alive) return;
+        if (pendingDocRef.current) {
+          setDocument(pendingDocRef.current);
+          pendingDocRef.current = null;
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const apply = () => setViewportHeight(vv.height);
+    apply();
+    vv.addEventListener('resize', apply);
+    return () => vv.removeEventListener('resize', apply);
+  }, []);
 
   const reportError = useCallback((message: string, fatal: boolean) => {
     // Rate-limit only benign noise; a fatal error must always reach the host.
@@ -155,7 +199,9 @@ export default function App() {
         savedRevision.current = null;
         reportedDirty.current = false;
         ignoredWords.current = new Set();
-        setDocument(base64ToBytes(msg.base64).buffer as ArrayBuffer);
+        const bytes = base64ToBytes(msg.base64).buffer as ArrayBuffer;
+        if (fontsRef.current) setDocument(bytes);
+        else pendingDocRef.current = bytes;
       } else if (msg.type === 'EXPORT_REQUEST') {
         void exportDoc();
       } else if (msg.type === 'SPELL_CHECK_REQUEST') {
@@ -189,10 +235,15 @@ export default function App() {
   return (
     <div
       className={`docx-editor${colorMode === 'dark' ? ' dark' : ''}`}
-      style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+      style={{
+        height: viewportHeight ? `${viewportHeight}px` : '100%',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
       <DocxEditor.Root
         document={document}
+        fonts={fonts}
         mode="edit"
         onReady={(editor) => {
           editorRef.current = editor;

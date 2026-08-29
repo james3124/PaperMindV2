@@ -134,32 +134,33 @@ export function DocumentListItem({
         overshootFriction={6}
         containerStyle={[styles.swipeContainer, style]}
       >
-        <Pressable
-          onPress={() => onPress(item)}
-          onLongPress={openSheet}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name}, ${formatSize(item.size)}, ${formatRelativeDate(item.lastModified)}`}
-          accessibilityHint="Opens the document. Long press or swipe left for more actions."
-          style={({ pressed }) => [
-            styles.row,
-            { backgroundColor: theme.background },
-            pressed && { opacity: 0.6, transform: [{ scale: 0.98 }] },
-          ]}
-        >
-          <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
-            <ThemedText type="smallBold" style={styles.iconLetter}>
-              W
-            </ThemedText>
-          </View>
+        <View style={[styles.row, { backgroundColor: theme.background }]}>
+          <Pressable
+            onPress={() => onPress(item)}
+            onLongPress={openSheet}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.name}, ${formatSize(item.size)}, ${formatRelativeDate(item.lastModified)}`}
+            accessibilityHint="Opens the document. Long press or swipe left for more actions."
+            style={({ pressed }) => [
+              styles.rowBody,
+              pressed && { opacity: 0.6, transform: [{ scale: 0.98 }] },
+            ]}
+          >
+            <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
+              <ThemedText type="smallBold" style={styles.iconLetter}>
+                W
+              </ThemedText>
+            </View>
 
-          <View style={styles.body}>
-            <ThemedText numberOfLines={1} style={styles.name}>
-              {item.name}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {formatSize(item.size)} · {formatRelativeDate(item.lastModified)}
-            </ThemedText>
-          </View>
+            <View style={styles.body}>
+              <ThemedText numberOfLines={1} style={styles.name}>
+                {item.name}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {formatSize(item.size)} · {formatRelativeDate(item.lastModified)}
+              </ThemedText>
+            </View>
+          </Pressable>
 
           <Pressable
             onPress={openSheet}
@@ -172,7 +173,7 @@ export function DocumentListItem({
             <View style={styles.dot} />
             <View style={styles.dot} />
           </Pressable>
-        </Pressable>
+        </View>
       </Swipeable>
 
       <Modal
@@ -278,10 +279,16 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.three,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     borderRadius: Spacing.three,
+  },
+  rowBody: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    minWidth: 0,
   },
   icon: {
     width: 44,

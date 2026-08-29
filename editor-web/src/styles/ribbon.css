@@ -111,3 +111,43 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/* Transform-based horizontal pan (popups must not be clipped). */
+.pm-ribbon__pan-outer {
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.pm-ribbon__pan-inner {
+  width: max-content;
+  will-change: transform;
+}
+
+.pm-ribbon__body {
+  flex-wrap: nowrap;
+}
+
+.pm-ribbon__paper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: var(--doc-text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pm-ribbon__paper-label {
+  color: var(--doc-text-muted);
+}
+
+.pm-ribbon__paper-select {
+  min-height: 40px;
+  border: 1px solid var(--doc-border);
+  border-radius: 6px;
+  background: var(--doc-bg-input);
+  color: var(--doc-text);
+  font: inherit;
+  font-size: 13px;
+  padding: 0 8px;
+}

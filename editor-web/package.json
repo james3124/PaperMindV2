@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@docx-editor.dev/fonts": "^2.12.0",
     "dictionary-en": "^4.0.0",
     "fflate": "^0.8.3",
     "nspell": "^2.1.5"
