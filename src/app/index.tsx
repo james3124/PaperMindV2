@@ -247,10 +247,11 @@ export default function HomeScreen() {
         accessibilityLabel="Create a new document from a template"
         style={({ pressed }) => [
           styles.fab,
+          { backgroundColor: theme.accent },
           pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
         ]}
       >
-        <Ionicons name="add" size={30} color="#ffffff" />
+        <Ionicons name="add" size={30} color={theme.accentText} />
       </Pressable>
 
       <TemplateSheet
@@ -329,7 +330,6 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#2b579a',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,

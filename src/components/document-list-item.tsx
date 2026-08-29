@@ -102,9 +102,9 @@ export function DocumentListItem({
             onPress={swipeShare}
             accessibilityRole="button"
             accessibilityLabel={`Share ${item.name}`}
-            style={[styles.swipeButton, { backgroundColor: '#2b579a' }]}
+            style={[styles.swipeButton, { backgroundColor: theme.accent }]}
           >
-            <ThemedText type="smallBold" style={styles.swipeButtonText}>
+            <ThemedText type="smallBold" style={{ color: theme.accentText }}>
               Share
             </ThemedText>
           </Pressable>
@@ -234,7 +234,7 @@ function SheetButton({
   destructive?: boolean;
 }) {
   const theme = useTheme();
-  const color = destructive ? '#ff3b30' : primary ? '#2b579a' : theme.text;
+  const color = destructive ? '#ff3b30' : primary ? theme.accent : theme.text;
   return (
     <Pressable
       onPress={onPress}

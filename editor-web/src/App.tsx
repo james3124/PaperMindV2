@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@docx-editor.dev/react/styles.css';
 import './styles/ribbon.css';
+import { FindBar } from './components/find-bar';
 import { Ribbon } from './components/ribbon';
 import { SpellCheckPanel } from './components/spell-check-panel';
 import {
@@ -29,6 +30,7 @@ export default function App() {
   const editorRef = useRef<Editor | null>(null);
   const [document, setDocument] = useState<ArrayBuffer | undefined>();
   const [colorMode, setColorMode] = useState<'light' | 'dark'>('light');
+  const [findOpen, setFindOpen] = useState(false);
   const [spellPanel, setSpellPanel] = useState<SpellPanelState>(SPELL_PANEL_CLOSED);
   // Revision of the last save we handed to the host; used to derive DIRTY.
   const savedRevision = useRef<number | null>(null);
@@ -213,7 +215,8 @@ export default function App() {
           }
         }}
       >
-        <Ribbon />
+        <Ribbon onFindToggle={() => setFindOpen((open) => !open)} />
+        {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
         <DocxEditor.Viewport style={{ flex: 1, minHeight: 0 }}>
           <DocxEditor.Content />
         </DocxEditor.Viewport>

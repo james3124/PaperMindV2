@@ -3,13 +3,25 @@ import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  BackHandler,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DocxBridgeView, type DocxBridgeHandle } from '@/components/docx-bridge-view';
 import { useTheme } from '@/hooks/use-theme';
 import {
   shareDocument,
+  renameDocument,
   type DocumentItem,
 } from '@/lib/documents';
 
@@ -21,15 +33,21 @@ export default function EditorScreen() {
   const params = useLocalSearchParams<{ uri?: string; name?: string }>();
   const router = useRouter();
   const theme = useTheme();
-  const uri = typeof params.uri === 'string' ? params.uri : undefined;
+  const paramUri = typeof params.uri === 'string' ? params.uri : undefined;
   const initialName =
     typeof params.name === 'string' && params.name.length > 0 ? params.name : 'Untitled.docx';
 
-  const fileName = initialName;
+  // Current on-disk location; changes when the document is renamed in-editor
+  // so saves never write back to a stale path.
+  const [uri, setUri] = useState(paramUri);
+  const [fileName, setFileName] = useState(initialName);
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [renameText, setRenameText] = useState('');
   const bridgeRef = useRef<DocxBridgeHandle>(null);
   const [docBase64, setDocBase64] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [pillText, setPillText] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   const pendingExitRef = useRef(false);
   const pendingShareRef = useRef(false);
@@ -85,12 +103,12 @@ export default function EditorScreen() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (!uri) {
+      if (!paramUri) {
         setLoadError(true);
         return;
       }
       try {
-        const file = new File(uri);
+        const file = new File(paramUri);
         const base64 = await file.base64();
         if (!cancelled) setDocBase64(base64);
       } catch {
@@ -101,7 +119,7 @@ export default function EditorScreen() {
     return () => {
       cancelled = true;
     };
-  }, [uri]);
+  }, [paramUri]);
 
   useEffect(() => {
     return () => {
@@ -240,6 +258,25 @@ export default function EditorScreen() {
     bridgeRef.current?.requestSpellCheck();
   }, []);
 
+  const openRename = useCallback(() => {
+    setRenameText(fileName.replace(/\.docx$/i, ''));
+    setRenameVisible(true);
+  }, [fileName]);
+
+  const confirmRename = useCallback(() => {
+    if (!uri) return;
+    try {
+      const item: DocumentItem = { uri, name: fileName, size: 0, lastModified: 0 };
+      const renamed = renameDocument(item, renameText);
+      setUri(renamed.uri);
+      setFileName(renamed.name);
+      setRenameVisible(false);
+      showPill('Renamed');
+    } catch {
+      showPill('Rename failed');
+    }
+  }, [uri, fileName, renameText, showPill]);
+
   const handleSpellCheckResult = useCallback(
     (fixed: number, remaining: number) => {
       if (fixed > 0) {
@@ -285,17 +322,27 @@ export default function EditorScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Back to documents"
               >
-                <Text style={[styles.topBarBack, { color: '#2b579a' }]}>{'←'}</Text>
+                <Text style={[styles.topBarBack, { color: theme.accent }]}>{'←'}</Text>
               </Pressable>
 
               <View style={styles.topBarCenter}>
-                <Text
-                  numberOfLines={1}
-                  style={[styles.topBarTitle, { color: theme.text }]}
-                  accessibilityLabel={`Editing ${fileName}`}
+                <Pressable
+                  onPress={openRename}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rename ${fileName}. Unsaved changes indicator ${dirty ? 'shown' : 'hidden'}`}
+                  style={({ pressed }) => [styles.topBarTitleWrap, pressed && { opacity: 0.6 }]}
                 >
-                  {fileName}
-                </Text>
+                  <Text numberOfLines={1} style={[styles.topBarTitle, { color: theme.text }]}>
+                    {fileName}
+                  </Text>
+                  {dirty && (
+                    <View
+                      style={[styles.dirtyDot, { backgroundColor: theme.accent }]}
+                      accessibilityLabel="Unsaved changes"
+                    />
+                  )}
+                </Pressable>
               </View>
 
               <Pressable
@@ -305,7 +352,7 @@ export default function EditorScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Check spelling"
               >
-                <MaterialCommunityIcons name="spellcheck" size={24} color="#2b579a" />
+                <MaterialCommunityIcons name="spellcheck" size={24} color={theme.accent} />
               </Pressable>
 
               <Pressable
@@ -315,7 +362,7 @@ export default function EditorScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Share ${fileName}`}
               >
-                <MaterialCommunityIcons name="share-variant" size={22} color="#2b579a" />
+                <MaterialCommunityIcons name="share-variant" size={22} color={theme.accent} />
               </Pressable>
             </View>
           </SafeAreaView>
@@ -324,9 +371,10 @@ export default function EditorScreen() {
             ref={bridgeRef}
             initialDocBase64={docBase64}
             onSaveRequested={handleSaveRequested}
-            onDirtyChange={(dirty) => {
-              dirtyRef.current = dirty;
-              if (dirty) scheduleAutosave();
+            onDirtyChange={(next) => {
+              dirtyRef.current = next;
+              setDirty(next);
+              if (next) scheduleAutosave();
               else clearAutosaveTimer();
             }}
             onError={handleBridgeError}
@@ -342,6 +390,35 @@ export default function EditorScreen() {
           </View>
         </View>
       )}
+
+      <Modal visible={renameVisible} transparent animationType="fade" onRequestClose={() => setRenameVisible(false)}>
+        <View style={styles.renameBackdrop}>
+          <View style={[styles.renameCard, { backgroundColor: theme.background }]}>
+            <Text style={[styles.renameTitle, { color: theme.text }]}>Rename document</Text>
+            <TextInput
+              value={renameText}
+              onChangeText={setRenameText}
+              autoCorrect={false}
+              style={[styles.renameInput, { backgroundColor: theme.backgroundElement, color: theme.text }]}
+              accessibilityLabel="New file name"
+            />
+            <View style={styles.renameActions}>
+              <Pressable
+                onPress={() => setRenameVisible(false)}
+                style={({ pressed }) => [styles.renameButton, { backgroundColor: theme.backgroundElement }, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={{ color: theme.text }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmRename}
+                style={({ pressed }) => [styles.renameButton, { backgroundColor: theme.accent }, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={{ color: theme.accentText }}>Rename</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -376,6 +453,54 @@ const styles = StyleSheet.create({
   topBarCenter: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    maxWidth: '100%',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  dirtyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  renameBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 24,
+  },
+  renameCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 14,
+    padding: 20,
+    gap: 14,
+  },
+  renameTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  renameInput: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+  },
+  renameActions: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
+  renameButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   topBarTitle: {
     fontSize: 16,

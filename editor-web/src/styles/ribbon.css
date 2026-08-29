@@ -11,6 +11,7 @@
 
 .pm-ribbon__tabs {
   display: flex;
+  align-items: stretch;
   overflow-x: auto;
   scrollbar-width: none;
   border-bottom: 1px solid var(--doc-border-light);
@@ -25,10 +26,11 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--doc-page-text);
+  color: var(--doc-text);
   font: inherit;
   font-size: 13px;
-  padding: 8px 14px;
+  min-height: 44px;
+  padding: 0 14px;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -39,6 +41,73 @@
   font-weight: 600;
 }
 
-.pm-ribbon__body {
-  padding: 2px 6px;
+.pm-ribbon__find {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--doc-text-muted);
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  padding: 0 14px;
+  margin-left: auto;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Android touch targets: the engine's 28px buttons are too small for thumbs. */
+.pm-ribbon .docx-toolbar__button {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.pm-findbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--doc-bg-subtle);
+  border-bottom: 1px solid var(--doc-border);
+}
+
+.pm-findbar__input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--doc-text);
+  background: var(--doc-bg-input);
+  border: 1px solid var(--doc-border-input);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.pm-findbar__count {
+  min-width: 34px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--doc-text-muted);
+}
+
+.pm-findbar__btn {
+  appearance: none;
+  border: 1px solid var(--doc-border);
+  background: var(--doc-bg);
+  color: var(--doc-text);
+  border-radius: 6px;
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pm-findbar__btn--on {
+  background: var(--doc-accent);
+  border-color: var(--doc-accent);
+  color: #fff;
+}
+
+.pm-findbar__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
