@@ -7,6 +7,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
+  Alert,
   LayoutAnimation,
   Linking,
   Platform,
@@ -21,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DocumentListItem } from '@/components/document-list-item';
 import { TemplateSheet } from '@/components/template-sheet';
+import { TrashSheet } from '@/components/trash-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
@@ -31,14 +33,21 @@ import { DOCX_MIME } from '@/lib/docx-bridge';
 import {
   createDocumentFromTemplate,
   deleteDocument,
+  duplicateDocument,
+  emptyTrash,
   exportCopyToDirectory,
   importDocument as importDocIntoLibrary,
   exportTextToCache,
   listDocuments,
+  listTrash,
+  recentDocuments,
   renameDocument,
+  restoreDocument,
   shareDocument,
+  trashDocument,
   type DocumentItem,
 } from '@/lib/documents';
+import { countWords, extractDocxText } from '@/lib/docx-text';
 import { docxBytesToPrintHtml, printHtml } from '@/lib/print';
 import { fetchLatestRelease, isNewerVersion, type UpdateInfo } from '@/lib/updates';
 
@@ -54,12 +63,39 @@ export default function HomeScreen() {
   const router = useRouter();
   const theme = useTheme();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [trashItems, setTrashItems] = useState<DocumentItem[]>([]);
   const [templateSheetVisible, setTemplateSheetVisible] = useState(false);
+  const [trashVisible, setTrashVisible] = useState(false);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
+  const [selecting, setSelecting] = useState(false);
+  const [selectedUris, setSelectedUris] = useState<string[]>([]);
+  // Word counts keyed by uri+mtime+size; unzip is sync so results are cached
+  // per reload instead of recomputed on every render.
+  const statsCache = useRef(new Map<string, string | null>());
 
-  const visibleDocuments = useMemo(() => {
+  function statsFor(item: DocumentItem): string | null {
+    const key = `${item.uri}|${item.lastModified}|${item.size}`;
+    const cached = statsCache.current.get(key);
+    if (cached !== undefined) return cached;
+    let stats: string | null = null;
+    try {
+      const text = extractDocxText(new File(item.uri).bytesSync());
+      if (text !== null) {
+        const words = countWords(text);
+        stats = `${words} word${words === 1 ? '' : 's'} · ${Math.max(1, Math.ceil(words / 200))} min`;
+      }
+    } catch {
+      stats = null; // unreadable -> no stats, never wrong numbers
+    }
+    statsCache.current.set(key, stats);
+    return stats;
+  }
+
+  type Row = { kind: 'header'; key: string; title: string } | { kind: 'doc'; item: DocumentItem };
+
+  const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
     const filtered =
       q.length === 0 ? documents : documents.filter((d) => d.name.toLowerCase().includes(q));
@@ -67,7 +103,17 @@ export default function HomeScreen() {
     if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
     else if (sortBy === 'size') sorted.sort((a, b) => b.size - a.size);
     else sorted.sort((a, b) => b.lastModified - a.lastModified);
-    return sorted;
+    // Recent section only for the default date-sorted, unfiltered library.
+    if (q.length === 0 && sortBy === 'date' && sorted.length > 3) {
+      const recent = recentDocuments(sorted, 3);
+      const recentUris = new Set(recent.map((d) => d.uri));
+      const out: Row[] = [{ kind: 'header', key: 'h-recent', title: 'Recent' }];
+      for (const item of recent) out.push({ kind: 'doc', item });
+      out.push({ kind: 'header', key: 'h-all', title: 'All documents' });
+      for (const item of sorted.filter((d) => !recentUris.has(d.uri))) out.push({ kind: 'doc', item });
+      return out;
+    }
+    return sorted.map((item) => ({ kind: 'doc', item }));
   }, [documents, query, sortBy]);
 
   useEffect(() => {
@@ -86,6 +132,8 @@ export default function HomeScreen() {
     if (animate) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     try {
       setDocuments(listDocuments());
+      setTrashItems(listTrash());
+      statsCache.current.clear();
     } catch {
       toast('Could not read the document library');
     }
@@ -210,12 +258,114 @@ export default function HomeScreen() {
   }
 
   function doDelete(item: DocumentItem) {
+    Alert.alert(
+      'Delete permanently',
+      `Delete “${item.name}” forever? This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            try {
+              deleteDocument(item);
+              reload(true);
+            } catch {
+              toast('Delete failed');
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function doTrash(item: DocumentItem) {
     try {
-      deleteDocument(item);
+      trashDocument(item);
       reload(true);
     } catch {
-      toast('Delete failed');
+      toast('Could not move to trash');
     }
+  }
+
+  function doDuplicate(item: DocumentItem) {
+    try {
+      openEditor(duplicateDocument(item));
+      reload();
+    } catch {
+      toast('Could not duplicate');
+    }
+  }
+
+  function doRestore(item: DocumentItem) {
+    try {
+      restoreDocument(item);
+      reload(true);
+    } catch {
+      toast('Restore failed');
+    }
+  }
+
+  function doEmptyTrash() {
+    try {
+      emptyTrash();
+      reload(true);
+    } catch {
+      toast('Could not empty trash');
+    }
+  }
+
+  function toggleSelect(item: DocumentItem) {
+    setSelectedUris((prev) =>
+      prev.includes(item.uri) ? prev.filter((uri) => uri !== item.uri) : [...prev, item.uri],
+    );
+  }
+
+  function exitSelection() {
+    setSelecting(false);
+    setSelectedUris([]);
+  }
+
+  function selectedItems(): DocumentItem[] {
+    const byUri = new Map(documents.map((d) => [d.uri, d]));
+    return selectedUris.map((uri) => byUri.get(uri)).filter((d) => d !== undefined);
+  }
+
+  function doTrashSelected() {
+    const items = selectedItems();
+    let failed = 0;
+    for (const item of items) {
+      try {
+        trashDocument(item);
+      } catch {
+        failed += 1;
+      }
+    }
+    exitSelection();
+    reload(true);
+    if (failed > 0) toast(`Could not trash ${failed} file${failed === 1 ? '' : 's'}`);
+  }
+
+  async function doSaveCopySelected() {
+    const items = selectedItems();
+    if (items.length === 0) return;
+    let dest: Directory;
+    try {
+      dest = await Directory.pickDirectoryAsync();
+    } catch {
+      return;
+    }
+    let failed = 0;
+    for (const item of items) {
+      try {
+        exportCopyToDirectory(item, dest);
+      } catch {
+        failed += 1;
+      }
+    }
+    exitSelection();
+    if (failed > 0) toast(`Export failed for ${failed} file${failed === 1 ? '' : 's'}`);
+    else toast(`Saved ${items.length} ${items.length === 1 ? 'copy' : 'copies'}`);
   }
 
   return (
@@ -232,20 +382,95 @@ export default function HomeScreen() {
                 : `${documents.length} document${documents.length === 1 ? '' : 's'}`}
             </ThemedText>
           </View>
-          <Pressable
-            onPress={() => void importFromDevice()}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Import Word documents from your device"
-            style={({ pressed }) => [
-              styles.iconButton,
-              { backgroundColor: theme.backgroundElement },
-              pressed && styles.pressed,
-            ]}
-          >
-            <MaterialCommunityIcons name="file-import" size={22} color={theme.text} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={() => (selecting ? exitSelection() : setSelecting(true))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={selecting ? 'Cancel selection' : 'Select documents'}
+              style={({ pressed }) => [
+                styles.iconButton,
+                {
+                  backgroundColor: selecting ? theme.accent : theme.backgroundElement,
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={selecting ? 'close' : 'format-list-checks'}
+                size={22}
+                color={selecting ? theme.accentText : theme.text}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => setTrashVisible(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Open trash, ${trashItems.length} documents`}
+              style={({ pressed }) => [
+                styles.iconButton,
+                { backgroundColor: theme.backgroundElement },
+                pressed && styles.pressed,
+              ]}
+            >
+              <MaterialCommunityIcons name="trash-can-outline" size={22} color={theme.text} />
+              {trashItems.length > 0 && (
+                <View style={[styles.badge, { backgroundColor: theme.accent }]}>
+                  <ThemedText style={[styles.badgeText, { color: theme.accentText }]}>
+                    {trashItems.length > 9 ? '9+' : `${trashItems.length}`}
+                  </ThemedText>
+                </View>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => void importFromDevice()}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Import Word documents from your device"
+              style={({ pressed }) => [
+                styles.iconButton,
+                { backgroundColor: theme.backgroundElement },
+                pressed && styles.pressed,
+              ]}
+            >
+              <MaterialCommunityIcons name="file-import" size={22} color={theme.text} />
+            </Pressable>
+          </View>
         </View>
+
+        {selecting && (
+          <View style={[styles.selectionBar, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="smallBold">
+              {selectedUris.length === 0
+                ? 'Select documents'
+                : `${selectedUris.length} selected`}
+            </ThemedText>
+            <View style={styles.selectionActions}>
+              <Pressable
+                onPress={doTrashSelected}
+                disabled={selectedUris.length === 0}
+                accessibilityRole="button"
+                accessibilityLabel="Move selected to trash"
+                style={({ pressed }) => [styles.selectionButton, pressed && styles.pressed]}
+              >
+                <ThemedText type="smallBold" style={{ color: '#ff3b30' }}>
+                  Trash
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => void doSaveCopySelected()}
+                disabled={selectedUris.length === 0}
+                accessibilityRole="button"
+                accessibilityLabel="Save copies of selected"
+                style={({ pressed }) => [styles.selectionButton, pressed && styles.pressed]}
+              >
+                <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                  Save copy
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {update !== null && (
           <Pressable
@@ -308,22 +533,33 @@ export default function HomeScreen() {
         </View>
 
         <FlatList
-          data={visibleDocuments}
-          keyExtractor={(item) => item.uri}
+          data={rows}
+          keyExtractor={(row) => (row.kind === 'header' ? row.key : row.item.uri)}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <DocumentListItem
-              item={item}
-              onPress={openDoc}
-              onRename={doRename}
-              onShare={doShare}
-              onSaveCopy={(target) => void doSaveCopy(target)}
-              onExportText={doExportText}
-              onPrint={doPrint}
-              onDelete={doDelete}
-            />
-          )}
+          renderItem={({ item: row }) =>
+            row.kind === 'header' ? (
+              <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionHeader}>
+                {row.title}
+              </ThemedText>
+            ) : (
+              <DocumentListItem
+                item={row.item}
+                stats={statsFor(row.item)}
+                selectionMode={selecting}
+                selected={selectedUris.includes(row.item.uri)}
+                onPress={openDoc}
+                onToggleSelect={toggleSelect}
+                onRename={doRename}
+                onShare={doShare}
+                onSaveCopy={(target) => void doSaveCopy(target)}
+                onExportText={doExportText}
+                onPrint={doPrint}
+                onDuplicate={doDuplicate}
+                onTrash={doTrash}
+              />
+            )
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
@@ -353,6 +589,14 @@ export default function HomeScreen() {
         visible={templateSheetVisible}
         onSelect={createFromTemplate}
         onClose={() => setTemplateSheetVisible(false)}
+      />
+      <TrashSheet
+        visible={trashVisible}
+        items={trashItems}
+        onRestore={doRestore}
+        onDelete={doDelete}
+        onEmpty={doEmptyTrash}
+        onClose={() => setTrashVisible(false)}
       />
     </ThemedView>
   );
@@ -401,6 +645,47 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.two,
+    marginBottom: Spacing.two,
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    gap: Spacing.one,
+  },
+  selectionButton: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  sectionHeader: {
+    paddingHorizontal: Spacing.one,
+    paddingTop: Spacing.two,
   },
   pressed: {
     opacity: 0.7,

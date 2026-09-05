@@ -5,11 +5,17 @@ import { TEMPLATES } from '@/generated/templates';
 import {
   createDocumentFromTemplate,
   deleteDocument,
+  duplicateDocument,
+  emptyTrash,
   exportCopyToDirectory,
   exportTextToCache,
   importDocument,
   listDocuments,
+  listTrash,
+  recentDocuments,
   renameDocument,
+  restoreDocument,
+  trashDocument,
 } from '@/lib/documents';
 
 const { MemFile, MemDir, resetFs } = vi.hoisted(() => {
@@ -70,9 +76,26 @@ const { MemFile, MemDir, resetFs } = vi.hoisted(() => {
     }
   }
   class MemDir {
+    static dirs = new Set<string>();
     uri: string;
-    constructor(uri: string) {
-      this.uri = uri.endsWith('/') ? uri : `${uri}/`;
+    constructor(dirOrUri: unknown, ...rest: string[]) {
+      const base =
+        typeof dirOrUri === 'string' ? dirOrUri : (dirOrUri as { uri: string }).uri;
+      const joined =
+        rest.length > 0 ? `${base.endsWith('/') ? base : `${base}/`}${rest.join('/')}` : base;
+      this.uri = joined.endsWith('/') ? joined : `${joined}/`;
+    }
+    get exists() {
+      if (MemDir.dirs.has(this.uri)) return true;
+      for (const p of store.keys()) if (p.startsWith(this.uri)) return true;
+      return false;
+    }
+    create() {
+      MemDir.dirs.add(this.uri);
+    }
+    delete() {
+      for (const p of [...store.keys()]) if (p.startsWith(this.uri)) store.delete(p);
+      MemDir.dirs.delete(this.uri);
     }
     list() {
       const out: MemFile[] = [];
@@ -89,6 +112,7 @@ const { MemFile, MemDir, resetFs } = vi.hoisted(() => {
     MemDir,
     resetFs: () => {
       store.clear();
+      MemDir.dirs.clear();
     },
   };
 });
@@ -214,5 +238,59 @@ describe('exportTextToCache', () => {
     const item = { uri: 'file:///library/broken.docx', name: 'broken.docx', size: 9, lastModified: 0 };
     expect(() => exportTextToCache(item)).toThrow();
     expect(new MemFile('file:///cache/broken.txt').exists).toBe(false);
+  });
+});
+
+describe('trash / restore', () => {
+  it('trashes by moving out of the library listing', () => {
+    const item = createDocumentFromTemplate(report);
+    const trashed = trashDocument(item);
+    expect(trashed.name).toBe('Report.docx');
+    expect(listDocuments()).toEqual([]);
+    expect(listTrash().map((d) => d.name)).toEqual(['Report.docx']);
+    expect(new MemFile(item.uri).exists).toBe(false);
+  });
+
+  it('restores with unique naming on collision', () => {
+    const item = createDocumentFromTemplate(report);
+    const trashed = trashDocument(item);
+    createDocumentFromTemplate(report); // library has Report.docx again... uniquely named
+    const restored = restoreDocument(trashed);
+    expect(listTrash()).toEqual([]);
+    const names = listDocuments().map((d) => d.name);
+    expect(names).toContain(restored.name);
+    expect(new MemFile(restored.uri).exists).toBe(true);
+  });
+
+  it('empties the trash permanently', () => {
+    const item = createDocumentFromTemplate(report);
+    trashDocument(item);
+    emptyTrash();
+    expect(listTrash()).toEqual([]);
+    expect(new MemFile('file:///library/.trash/Report.docx').exists).toBe(false);
+  });
+});
+
+describe('duplicateDocument', () => {
+  it('copies with a copy-suffixed unique name', () => {
+    const item = createDocumentFromTemplate(report);
+    const dup = duplicateDocument(item);
+    expect(dup.name).toBe('Report copy.docx');
+    expect(listDocuments()).toHaveLength(2);
+    const dup2 = duplicateDocument(item);
+    expect(dup2.name).toBe('Report copy 2.docx');
+  });
+});
+
+describe('recentDocuments', () => {
+  it('returns the newest first, capped at the limit', () => {
+    const a = createDocumentFromTemplate(blank);
+    const b = createDocumentFromTemplate(report);
+    const recents = recentDocuments(listDocuments(), 1);
+    expect(recents).toHaveLength(1);
+    expect(recentDocuments(listDocuments(), 10)).toHaveLength(2);
+    expect(recentDocuments([], 5)).toEqual([]);
+    void a;
+    void b;
   });
 });

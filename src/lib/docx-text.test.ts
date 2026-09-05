@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractDocxText } from './docx-text';
+import { countWords, extractDocxText } from './docx-text';
 
 function crc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
@@ -100,5 +100,16 @@ describe('extractDocxText', () => {
 
   it('returns null for non-zip input', () => {
     expect(extractDocxText(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
+
+describe('countWords', () => {
+  it('counts words, contractions as one', () => {
+    expect(countWords("Hello world, don't stop")).toBe(4);
+  });
+
+  it('returns 0 for empty or wordless text', () => {
+    expect(countWords('')).toBe(0);
+    expect(countWords('  \n 123 ... ')).toBe(0);
   });
 });

@@ -209,6 +209,8 @@ export function Ribbon({ onFindToggle }: { onFindToggle?: () => void }) {
               <Toolbar.Separator />
               <Toolbar.Link />
               <Toolbar.Button slot="insert.pageBreak" />
+              <Toolbar.Button slot="insert.sectionBreakNextPage" />
+              <Toolbar.Button slot="insert.sectionBreakContinuous" />
               <Toolbar.Button slot="insert.footnote" />
               <Toolbar.Button slot="insert.endnote" />
               <Toolbar.Button slot="insert.toc" />

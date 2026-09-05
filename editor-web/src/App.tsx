@@ -136,8 +136,7 @@ export default function App() {
     postToNative({ type: 'DIRTY', value: dirtyNow });
   }, []);
 
-  const openSpellCheck = useCallback(async () => {
-    if (!editorRef.current) {
+  const openSpellCheck = useCallback(async () => {    if (!editorRef.current) {
       pendingActionRef.current = 'spell';
       return;
     }
@@ -279,6 +278,7 @@ export default function App() {
         </div>
         {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
         <DocxEditor.Viewport style={{ flex: 1, minHeight: 0 }}>
+          <DocxEditor.HeaderFooterChrome />
           <DocxEditor.Content />
         </DocxEditor.Viewport>
       </DocxEditor.Root>

@@ -29,6 +29,12 @@ function extractParagraphText(part: string): string {
   return text;
 }
 
+/** Word count over readable text: letter runs, contractions count as one. */
+export function countWords(text: string): number {
+  const matches = text.match(/\p{L}+(?:['’]\p{L}+)*/gu);
+  return matches ? matches.length : 0;
+}
+
 /**
  * Extracts readable text from .docx bytes, one paragraph per line, across the
  * body, headers, footers, footnotes, and endnotes. Returns null when the

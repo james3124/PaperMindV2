@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   Modal,
   Pressable,
@@ -26,25 +25,35 @@ type AnimatedInterpolation = ReturnType<Animated.Value['interpolate']>;
 
 type DocumentListItemProps = {
   item: DocumentItem;
+  stats?: string | null;
+  selectionMode?: boolean;
+  selected?: boolean;
   onPress: (item: DocumentItem) => void;
+  onToggleSelect?: (item: DocumentItem) => void;
   onRename: (item: DocumentItem, newName: string) => void;
   onShare: (item: DocumentItem) => void;
   onSaveCopy: (item: DocumentItem) => void;
   onExportText: (item: DocumentItem) => void;
   onPrint: (item: DocumentItem) => void;
-  onDelete: (item: DocumentItem) => void;
+  onDuplicate: (item: DocumentItem) => void;
+  onTrash: (item: DocumentItem) => void;
   style?: StyleProp<ViewStyle>;
 };
 
 export function DocumentListItem({
   item,
+  stats,
+  selectionMode,
+  selected,
   onPress,
+  onToggleSelect,
   onRename,
   onShare,
   onSaveCopy,
   onExportText,
   onPrint,
-  onDelete,
+  onDuplicate,
+  onTrash,
   style,
 }: DocumentListItemProps) {
   const theme = useTheme();
@@ -75,20 +84,15 @@ export function DocumentListItem({
     closeSheet();
   }
 
-  function confirmDelete() {
+  function confirmTrash() {
     swipeRef.current?.close();
     closeSheet();
-    Alert.alert('Delete document', `Delete “${item.name}”? This can’t be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          onDelete(item);
-        },
-      },
-    ]);
+    onTrash(item);
+  }
+
+  function swipeTrash() {
+    swipeRef.current?.close();
+    onTrash(item);
   }
 
   function swipeShare() {
@@ -117,13 +121,13 @@ export function DocumentListItem({
         </Animated.View>
         <Animated.View style={[styles.swipeButtonWrap, { opacity }]}>
           <Pressable
-            onPress={confirmDelete}
+            onPress={swipeTrash}
             accessibilityRole="button"
-            accessibilityLabel={`Delete ${item.name}`}
+            accessibilityLabel={`Move ${item.name} to trash`}
             style={[styles.swipeButton, { backgroundColor: '#ff3b30' }]}
           >
             <ThemedText type="smallBold" style={styles.swipeButtonText}>
-              Delete
+              Trash
             </ThemedText>
           </Pressable>
         </Animated.View>
@@ -142,19 +146,35 @@ export function DocumentListItem({
       >
         <View style={[styles.row, { backgroundColor: theme.background }]}>
           <Pressable
-            onPress={() => onPress(item)}
-            onLongPress={openSheet}
+            onPress={() => (selectionMode === true ? onToggleSelect?.(item) : onPress(item))}
+            onLongPress={selectionMode === true ? undefined : openSheet}
             accessibilityRole="button"
             accessibilityLabel={`${item.name}, ${formatSize(item.size)}, ${formatRelativeDate(item.lastModified)}`}
-            accessibilityHint="Opens the document. Long press or swipe left for more actions."
+            accessibilityHint={
+              selectionMode === true
+                ? 'Toggles selection.'
+                : 'Opens the document. Long press or swipe left for more actions.'
+            }
             style={({ pressed }) => [
               styles.rowBody,
               pressed && { opacity: 0.6, transform: [{ scale: 0.98 }] },
             ]}
           >
-            <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
-              <ThemedText type="smallBold" style={styles.iconLetter}>
-                W
+            <View
+              style={[
+                styles.icon,
+                { backgroundColor: selectionMode === true && selected === true ? theme.accent : theme.backgroundSelected },
+              ]}
+            >
+              <ThemedText
+                type="smallBold"
+                style={[
+                  styles.iconLetter,
+                  selectionMode === true &&
+                    selected === true && { color: theme.accentText },
+                ]}
+              >
+                {selectionMode === true && selected === true ? '✓' : 'W'}
               </ThemedText>
             </View>
 
@@ -164,10 +184,12 @@ export function DocumentListItem({
               </ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
                 {formatSize(item.size)} · {formatRelativeDate(item.lastModified)}
+                {stats ? ` · ${stats}` : ''}
               </ThemedText>
             </View>
           </Pressable>
 
+          {selectionMode !== true && (
           <Pressable
             onPress={openSheet}
             hitSlop={12}
@@ -179,6 +201,7 @@ export function DocumentListItem({
             <View style={styles.dot} />
             <View style={styles.dot} />
           </Pressable>
+          )}
         </View>
       </Swipeable>
 
@@ -221,7 +244,8 @@ export function DocumentListItem({
                 <SheetButton label="Save copy to…" onPress={() => { closeSheet(); onSaveCopy(item); }} />
                 <SheetButton label="Export as text" onPress={() => { closeSheet(); onExportText(item); }} />
                 <SheetButton label="Print text" onPress={() => { closeSheet(); onPrint(item); }} />
-                <SheetButton label="Delete" onPress={confirmDelete} destructive />
+                <SheetButton label="Duplicate" onPress={() => { closeSheet(); onDuplicate(item); }} />
+                <SheetButton label="Move to trash" onPress={confirmTrash} destructive />
                 <SheetButton label="Cancel" onPress={closeSheet} />
               </>
             )}

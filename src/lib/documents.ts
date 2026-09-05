@@ -119,6 +119,69 @@ export function deleteDocument(item: DocumentItem): void {
   if (file.exists) file.delete();
 }
 
+const TRASH_DIR_NAME = '.trash';
+
+function trashDir(): Directory {
+  const dir = new Directory(Paths.document, TRASH_DIR_NAME);
+  if (!dir.exists) dir.create();
+  return dir;
+}
+
+/** Soft-delete: moves the file into the trash dir, out of library listings. */
+export function trashDocument(item: DocumentItem): DocumentItem {
+  const dest = new File(trashDir(), item.name);
+  new File(item.uri).moveSync(dest, { overwrite: true });
+  return toItem(dest);
+}
+
+/** Documents currently in the trash, newest first. */
+export function listTrash(): DocumentItem[] {
+  const dir = new Directory(Paths.document, TRASH_DIR_NAME);
+  if (!dir.exists) return [];
+  return dir
+    .list()
+    .filter(isDocxFile)
+    .map(toItem)
+    .sort((a, b) => b.lastModified - a.lastModified);
+}
+
+/** Restores a trashed document to the library, unique-ifying on collision. */
+export function restoreDocument(trashed: DocumentItem): DocumentItem {
+  const taken = existingNames();
+  const base = trashed.name.toLowerCase().endsWith(DOCX_EXT)
+    ? trashed.name.slice(0, -DOCX_EXT.length)
+    : trashed.name;
+  const name = uniqueNamePure(base, DOCX_EXT, taken);
+  const dest = new File(library(), name);
+  new File(trashed.uri).moveSync(dest);
+  return toItem(dest);
+}
+
+/** Permanently deletes everything in the trash. */
+export function emptyTrash(): void {
+  const dir = new Directory(Paths.document, TRASH_DIR_NAME);
+  if (!dir.exists) return;
+  for (const entry of dir.list()) {
+    if (entry instanceof File && entry.exists) entry.delete();
+  }
+}
+
+/** Duplicates a library document as "<base> copy.docx", unique-ified. */
+export function duplicateDocument(item: DocumentItem): DocumentItem {
+  const base = item.name.toLowerCase().endsWith(DOCX_EXT)
+    ? item.name.slice(0, -DOCX_EXT.length)
+    : item.name;
+  const name = uniqueNamePure(`${base} copy`, DOCX_EXT, existingNames());
+  const dest = new File(library(), name);
+  new File(item.uri).copySync(dest);
+  return toItem(dest);
+}
+
+/** Newest-first slice of the library for a "Recent" section. Input is assumed sorted. */
+export function recentDocuments(docs: DocumentItem[], limit = 5): DocumentItem[] {
+  return docs.slice(0, Math.max(0, limit));
+}
+
 /**
  * Copies a library document into an arbitrary destination directory
  * (e.g. a user-picked folder via the system picker). Uniqueness is
