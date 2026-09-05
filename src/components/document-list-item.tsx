@@ -29,6 +29,9 @@ type DocumentListItemProps = {
   onPress: (item: DocumentItem) => void;
   onRename: (item: DocumentItem, newName: string) => void;
   onShare: (item: DocumentItem) => void;
+  onSaveCopy: (item: DocumentItem) => void;
+  onExportText: (item: DocumentItem) => void;
+  onPrint: (item: DocumentItem) => void;
   onDelete: (item: DocumentItem) => void;
   style?: StyleProp<ViewStyle>;
 };
@@ -38,6 +41,9 @@ export function DocumentListItem({
   onPress,
   onRename,
   onShare,
+  onSaveCopy,
+  onExportText,
+  onPrint,
   onDelete,
   style,
 }: DocumentListItemProps) {
@@ -212,6 +218,9 @@ export function DocumentListItem({
               <>
                 <SheetButton label="Rename" onPress={() => setRenaming(true)} />
                 <SheetButton label="Share" onPress={() => { closeSheet(); onShare(item); }} />
+                <SheetButton label="Save copy to…" onPress={() => { closeSheet(); onSaveCopy(item); }} />
+                <SheetButton label="Export as text" onPress={() => { closeSheet(); onExportText(item); }} />
+                <SheetButton label="Print text" onPress={() => { closeSheet(); onPrint(item); }} />
                 <SheetButton label="Delete" onPress={confirmDelete} destructive />
                 <SheetButton label="Cancel" onPress={closeSheet} />
               </>

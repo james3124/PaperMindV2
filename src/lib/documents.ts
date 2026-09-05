@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 
 import { TEMPLATES, type TemplateDef } from '@/generated/templates';
 import { DOCX_MIME } from '@/lib/docx-bridge';
+import { extractDocxText } from '@/lib/docx-text';
 import {
   BLANK_BASE,
   DOCX_EXT,
@@ -118,8 +119,65 @@ export function deleteDocument(item: DocumentItem): void {
   if (file.exists) file.delete();
 }
 
-export async function shareDocument(item: DocumentItem): Promise<boolean> {
+/**
+ * Copies a library document into an arbitrary destination directory
+ * (e.g. a user-picked folder via the system picker). Uniqueness is
+ * scoped to the destination, never the library; the source is untouched.
+ * Throws on failure without leaving a partial file behind.
+ */
+export function exportCopyToDirectory(
+  item: DocumentItem,
+  dest: Directory,
+): { uri: string; name: string } {
+  const taken = new Set<string>();
+  for (const entry of dest.list()) {
+    if (entry instanceof File) taken.add(entry.name.toLowerCase());
+  }
+  const base = item.name.toLowerCase().endsWith(DOCX_EXT)
+    ? item.name.slice(0, -DOCX_EXT.length)
+    : item.name;
+  const name = uniqueNamePure(base, DOCX_EXT, taken);
+  const out = new File(dest, name);
+  try {
+    new File(item.uri).copySync(out);
+  } catch (error) {
+    if (out.exists) out.delete();
+    throw error;
+  }
+  return { uri: out.uri, name: out.name };
+}
+
+export async function shareDocument(
+  item: DocumentItem,
+  mimeType: string = DOCX_MIME,
+): Promise<boolean> {
   if (!(await Sharing.isAvailableAsync())) return false;
-  await Sharing.shareAsync(item.uri, { mimeType: DOCX_MIME });
+  await Sharing.shareAsync(item.uri, { mimeType });
   return true;
+}
+
+/**
+ * Extracts a document's readable text and writes it as a .txt file to the
+ * cache directory (temp-file + move, like all other writes). Returns the
+ * cache file for sharing. Throws for unreadable packages without writing.
+ */
+export function exportTextToCache(item: DocumentItem): { uri: string; name: string } {
+  const bytes = new File(item.uri).bytesSync();
+  const text = extractDocxText(bytes);
+  if (text === null) throw new Error('unreadable document');
+  const base = item.name.toLowerCase().endsWith(DOCX_EXT)
+    ? item.name.slice(0, -DOCX_EXT.length)
+    : item.name;
+  const name = `${base}.txt`;
+  const file = new File(Paths.cache, name);
+  const tmp = new File(Paths.cache, `${name}.tmp`);
+  if (tmp.exists) tmp.delete();
+  try {
+    tmp.write(text);
+    tmp.moveSync(file, { overwrite: true });
+  } catch (error) {
+    if (tmp.exists) tmp.delete();
+    throw error;
+  }
+  return { uri: file.uri, name: file.name };
 }

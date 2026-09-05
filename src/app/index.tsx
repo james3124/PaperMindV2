@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
+import { Directory, File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -30,12 +31,15 @@ import { DOCX_MIME } from '@/lib/docx-bridge';
 import {
   createDocumentFromTemplate,
   deleteDocument,
+  exportCopyToDirectory,
   importDocument as importDocIntoLibrary,
+  exportTextToCache,
   listDocuments,
   renameDocument,
   shareDocument,
   type DocumentItem,
 } from '@/lib/documents';
+import { docxBytesToPrintHtml, printHtml } from '@/lib/print';
 import { fetchLatestRelease, isNewerVersion, type UpdateInfo } from '@/lib/updates';
 
 if (Platform.OS === 'android') {
@@ -165,6 +169,46 @@ export default function HomeScreen() {
       .catch(() => toast('Sharing failed'));
   }
 
+  async function doSaveCopy(item: DocumentItem) {
+    let dest: Directory;
+    try {
+      dest = await Directory.pickDirectoryAsync();
+    } catch {
+      return; // picker dismissed — no-op, never an error toast
+    }
+    try {
+      const out = exportCopyToDirectory(item, dest);
+      toast(`Saved copy as ${out.name}`);
+    } catch {
+      toast('Export failed');
+    }
+  }
+
+  function doExportText(item: DocumentItem) {    let txt: { uri: string; name: string };
+    try {
+      txt = exportTextToCache(item);
+    } catch {
+      toast('Could not read the document text');
+      return;
+    }
+    shareDocument({ uri: txt.uri, name: txt.name, size: 0, lastModified: 0 }, 'text/plain')
+      .then((shared) => {
+        if (!shared) toast('Sharing is not available on this device');
+      })
+      .catch(() => toast('Sharing failed'));
+  }
+
+  function doPrint(item: DocumentItem) {
+    void (async () => {
+      try {
+        const bytes = new File(item.uri).bytesSync();
+        await printHtml(docxBytesToPrintHtml(bytes, item.name));
+      } catch {
+        toast('Print failed');
+      }
+    })();
+  }
+
   function doDelete(item: DocumentItem) {
     try {
       deleteDocument(item);
@@ -274,6 +318,9 @@ export default function HomeScreen() {
               onPress={openDoc}
               onRename={doRename}
               onShare={doShare}
+              onSaveCopy={(target) => void doSaveCopy(target)}
+              onExportText={doExportText}
+              onPrint={doPrint}
               onDelete={doDelete}
             />
           )}
