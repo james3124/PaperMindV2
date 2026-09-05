@@ -197,6 +197,16 @@ export function Ribbon({ onFindToggle }: { onFindToggle?: () => void }) {
               <Toolbar.TableInsert />
               <Toolbar.ImageInsert />
               <Toolbar.Separator />
+              <Toolbar.ImageWrap />
+              <Toolbar.ImageAltText />
+              <Toolbar.ImageProperties />
+              <Toolbar.Separator />
+              <Toolbar.TableCellFill />
+              <Toolbar.TableBorderTarget />
+              <Toolbar.TableBorderStyle />
+              <Toolbar.TableBorderWidth />
+              <Toolbar.TableBorderColor />
+              <Toolbar.Separator />
               <Toolbar.Link />
               <Toolbar.Button slot="insert.pageBreak" />
               <Toolbar.Button slot="insert.footnote" />

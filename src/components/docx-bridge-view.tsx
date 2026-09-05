@@ -60,6 +60,7 @@ export type DocxBridgeHandle = {
 
 type DocxBridgeViewProps = {
   initialDocBase64: string;
+  isDirty?: boolean;
   onSaveRequested: (base64: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   onError: (message: string, fatal: boolean) => void;
@@ -74,7 +75,7 @@ function injectMessage(messageJson: string): string {
 
 export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
   function DocxBridgeView(
-    { initialDocBase64, onSaveRequested, onDirtyChange, onError, onSpellCheckResult },
+    { initialDocBase64, isDirty, onSaveRequested, onDirtyChange, onError, onSpellCheckResult },
     ref,
   ) {
     const webRef = useRef<WebView>(null);
@@ -172,6 +173,11 @@ export const DocxBridgeView = forwardRef<DocxBridgeHandle, DocxBridgeViewProps>(
       return (
         <View style={[styles.centered, { backgroundColor: theme.background }]}>
           <Text style={[styles.title, { color: theme.text }]}>Editor failed to load</Text>
+          {isDirty === true && (
+            <Text style={[styles.subtitle, { color: theme.text }]}>
+              Unsaved changes may be lost if you retry.
+            </Text>
+          )}
           <Pressable
             style={({ pressed }) => [
               styles.retry,
@@ -237,6 +243,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  subtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   retry: {
     paddingHorizontal: 24,

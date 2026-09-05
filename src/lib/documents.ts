@@ -118,7 +118,8 @@ export function deleteDocument(item: DocumentItem): void {
   if (file.exists) file.delete();
 }
 
-export async function shareDocument(item: DocumentItem): Promise<void> {
-  if (!(await Sharing.isAvailableAsync())) return;
+export async function shareDocument(item: DocumentItem): Promise<boolean> {
+  if (!(await Sharing.isAvailableAsync())) return false;
   await Sharing.shareAsync(item.uri, { mimeType: DOCX_MIME });
+  return true;
 }

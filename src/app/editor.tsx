@@ -185,7 +185,8 @@ export default function EditorScreen() {
           pendingShareRef.current = false;
           const item: DocumentItem = { uri: uri!, name: fileName, size: 0, lastModified: 0 };
           try {
-            await shareDocument(item);
+            const shared = await shareDocument(item);
+            if (!shared) showPill('Sharing is not available on this device');
           } catch {
             showPill('Sharing failed');
           }
@@ -236,6 +237,7 @@ export default function EditorScreen() {
         onPress: () => {
           pendingExitRef.current = true;
           armPendingTimer();
+          showPill('Saving…');
           bridgeRef.current?.requestExport();
         },
       },
@@ -249,13 +251,14 @@ export default function EditorScreen() {
       },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, [fileName, router, armPendingTimer]);
+  }, [fileName, router, armPendingTimer, showPill]);
 
   const requestShare = useCallback(() => {
     pendingShareRef.current = true;
     armPendingTimer();
+    showPill('Saving…');
     bridgeRef.current?.requestExport();
-  }, [armPendingTimer]);
+  }, [armPendingTimer, showPill]);
 
   const requestSpellCheck = useCallback(() => {
     bridgeRef.current?.requestSpellCheck();
@@ -373,6 +376,7 @@ export default function EditorScreen() {
           <DocxBridgeView
             ref={bridgeRef}
             initialDocBase64={docBase64}
+            isDirty={dirty}
             onSaveRequested={handleSaveRequested}
             onDirtyChange={(next) => {
               dirtyRef.current = next;

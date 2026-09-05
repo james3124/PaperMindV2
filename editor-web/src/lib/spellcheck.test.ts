@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractDocumentText, findMisspellings } from './spellcheck';
+import { extractDocumentText, findMisspellings, findMisspellingsDetailed } from './spellcheck';
 
 function docxWithParts(parts: Record<string, string>): Uint8Array {
   const encoder = new TextEncoder();
@@ -155,5 +155,17 @@ describe('findMisspellings', () => {
     // The tokens must be the full accented words, never fragments like "caf".
     for (const item of results) expect(item.word).toMatch(/\p{L}+/u);
     expect(results.map((item) => item.word)).not.toContain('caf');
+  });
+
+  it('reports truncation when more misspellings exist than the limit', () => {
+    const words = Array.from({ length: 10 }, (_, i) => `zzq${'x'.repeat(i)}qzz`).join(' ');
+    const detailed = findMisspellingsDetailed(words, new Set(), 3);
+    expect(detailed.items).toHaveLength(3);
+    expect(detailed.truncated).toBe(true);
+  });
+
+  it('reports not truncated when all misspellings fit', () => {
+    const detailed = findMisspellingsDetailed('teh', new Set(), 200);
+    expect(detailed.truncated).toBe(false);
   });
 });

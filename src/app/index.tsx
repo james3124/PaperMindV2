@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   LayoutAnimation,
@@ -11,6 +11,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  TextInput,
   ToastAndroid,
   UIManager,
   View,
@@ -51,6 +52,19 @@ export default function HomeScreen() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [templateSheetVisible, setTemplateSheetVisible] = useState(false);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
+
+  const visibleDocuments = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered =
+      q.length === 0 ? documents : documents.filter((d) => d.name.toLowerCase().includes(q));
+    const sorted = [...filtered];
+    if (sortBy === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === 'size') sorted.sort((a, b) => b.size - a.size);
+    else sorted.sort((a, b) => b.lastModified - a.lastModified);
+    return sorted;
+  }, [documents, query, sortBy]);
 
   useEffect(() => {
     if (__DEV__) return; // dev builds carry a placeholder version; the banner would always show
@@ -144,7 +158,11 @@ export default function HomeScreen() {
   }
 
   function doShare(item: DocumentItem) {
-    shareDocument(item).catch(() => toast('Sharing failed'));
+    shareDocument(item)
+      .then((shared) => {
+        if (!shared) toast('Sharing is not available on this device');
+      })
+      .catch(() => toast('Sharing failed'));
   }
 
   function doDelete(item: DocumentItem) {
@@ -214,8 +232,39 @@ export default function HomeScreen() {
           </Pressable>
         )}
 
+        <View style={styles.searchRow}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search documents"
+            placeholderTextColor={theme.textSecondary}
+            accessibilityLabel="Search documents"
+            style={[
+              styles.searchInput,
+              { color: theme.text, backgroundColor: theme.backgroundElement },
+            ]}
+          />
+          <Pressable
+            onPress={() =>
+              setSortBy((s) => (s === 'date' ? 'name' : s === 'name' ? 'size' : 'date'))
+            }
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Sort documents, currently by ${sortBy}`}
+            style={({ pressed }) => [
+              styles.sortButton,
+              { backgroundColor: theme.backgroundElement },
+              pressed && styles.pressed,
+            ]}
+          >
+            <ThemedText type="smallBold">
+              {sortBy === 'date' ? 'Date' : sortBy === 'name' ? 'Name' : 'Size'}
+            </ThemedText>
+          </Pressable>
+        </View>
+
         <FlatList
-          data={documents}
+          data={visibleDocuments}
           keyExtractor={(item) => item.uri}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -308,6 +357,26 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
+  },
+  searchInput: {
+    flex: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 16,
+  },
+  sortButton: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.two,
+    minWidth: 64,
+    alignItems: 'center',
   },
   listContent: {
     gap: Spacing.one,

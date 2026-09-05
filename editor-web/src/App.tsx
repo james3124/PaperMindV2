@@ -1,5 +1,5 @@
 import { defaultFonts } from '@docx-editor.dev/fonts';
-import { DocxEditor, type Editor } from '@docx-editor.dev/react';
+import { DocxEditor, ImageInsertProvider, type Editor } from '@docx-editor.dev/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@docx-editor.dev/react/styles.css';
@@ -14,7 +14,7 @@ import {
   parseNativeMessage,
   postToNative,
 } from './lib/bridge';
-import { extractDocumentText, findMisspellings, warmSpellchecker, type Misspelling } from './lib/spellcheck';
+import { extractDocumentText, findMisspellingsDetailed, warmSpellchecker, type Misspelling } from './lib/spellcheck';
 
 const ERROR_POST_INTERVAL_MS = 2_000;
 
@@ -23,9 +23,10 @@ type SpellPanelState = {
   checking: boolean;
   items: Misspelling[];
   fixed: number;
+  truncated: boolean;
 };
 
-const SPELL_PANEL_CLOSED: SpellPanelState = { open: false, checking: false, items: [], fixed: 0 };
+const SPELL_PANEL_CLOSED: SpellPanelState = { open: false, checking: false, items: [], fixed: 0, truncated: false };
 
 export default function App() {
   const editorRef = useRef<Editor | null>(null);
@@ -140,13 +141,13 @@ export default function App() {
       pendingActionRef.current = 'spell';
       return;
     }
-    setSpellPanel({ open: true, checking: true, items: [], fixed: 0 });
+    setSpellPanel({ open: true, checking: true, items: [], fixed: 0, truncated: false });
     try {
       const saved = await editorRef.current.save();
       const text = extractDocumentText(new Uint8Array(saved));
       if (text === null) throw new Error('unreadable document');
-      const items = findMisspellings(text, ignoredWords.current);
-      setSpellPanel((panel) => (panel.open ? { ...panel, checking: false, items } : panel));
+      const { items, truncated } = findMisspellingsDetailed(text, ignoredWords.current);
+      setSpellPanel((panel) => (panel.open ? { ...panel, checking: false, items, truncated } : panel));
     } catch {
       setSpellPanel((panel) => (panel.open ? { ...panel, checking: false, items: [] } : panel));
     }
@@ -247,6 +248,7 @@ export default function App() {
         flexDirection: 'column',
       }}
     >
+      <ImageInsertProvider>
       <DocxEditor.Root
         document={document}
         fonts={fonts}
@@ -280,6 +282,7 @@ export default function App() {
           <DocxEditor.Content />
         </DocxEditor.Viewport>
       </DocxEditor.Root>
+      </ImageInsertProvider>
 
       {spellPanel.open && (
         <SpellCheckPanel
@@ -287,6 +290,7 @@ export default function App() {
           checking={spellPanel.checking}
           items={spellPanel.items}
           fixedCount={spellPanel.fixed}
+          truncated={spellPanel.truncated}
           onFix={fixWord}
           onIgnore={ignoreWord}
           onClose={closeSpellCheck}

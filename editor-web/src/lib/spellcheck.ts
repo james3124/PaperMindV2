@@ -90,21 +90,38 @@ export function findMisspellings(
   ignored: ReadonlySet<string>,
   limit = 200,
 ): Misspelling[] {
+  return findMisspellingsDetailed(text, ignored, limit).items;
+}
+
+/**
+ * Same as findMisspellings, but also reports whether more misspellings
+ * exist beyond `limit` so the UI can label a capped list.
+ */
+export function findMisspellingsDetailed(
+  text: string,
+  ignored: ReadonlySet<string>,
+  limit = 200,
+): { items: Misspelling[]; truncated: boolean } {
   const spell = checker();
   const seen = new Set<string>();
   for (const word of ignored) seen.add(word.toLowerCase());
   const results: Misspelling[] = [];
   const clean = text.replace(URLISH_RE, ' ');
   let match: RegExpExecArray | null;
+  let truncated = false;
   WORD_RE.lastIndex = 0;
-  while ((match = WORD_RE.exec(clean)) !== null && results.length < limit) {
+  while ((match = WORD_RE.exec(clean)) !== null) {
     const word = match[0].replace(/’/g, "'");
     if (word.length < 2 || word === word.toUpperCase()) continue;
     const key = word.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     if (spell.correct(word)) continue;
+    if (results.length >= limit) {
+      truncated = true;
+      break;
+    }
     results.push({ word, suggestions: spell.suggest(word).slice(0, 5) });
   }
-  return results;
+  return { items: results, truncated };
 }

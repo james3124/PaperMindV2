@@ -7,6 +7,7 @@ type SpellCheckPanelProps = {
   checking: boolean;
   items: Misspelling[];
   fixedCount: number;
+  truncated?: boolean;
   onFix: (word: string, replacement: string) => void;
   onIgnore: (word: string) => void;
   onClose: () => void;
@@ -17,6 +18,7 @@ export function SpellCheckPanel({
   checking,
   items,
   fixedCount,
+  truncated,
   onFix,
   onIgnore,
   onClose,
@@ -90,9 +92,11 @@ export function SpellCheckPanel({
           <span style={{ fontSize: 13, color: colors.secondary }}>
             {checking
               ? 'Checking…'
-              : fixedCount > 0
-                ? `${fixedCount} fixed`
-                : ''}
+              : truncated === true
+                ? `Showing first ${items.length}`
+                : fixedCount > 0
+                  ? `${fixedCount} fixed`
+                  : ''}
           </span>
           <button
             onClick={closePanel}
